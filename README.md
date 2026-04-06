@@ -268,22 +268,3 @@ The project setup currently includes:
 * Git confirmed that `.venv` is not being tracked
 
 This means the basic Python and YOLO environment setup is ready.
-
----
-
-## 16. Next steps
-
-Now that the environment setup is complete, the next technical tasks are:
-
-1. run the YOLO smoke test
-2. create a frame extraction script for sample videos
-3. test YOLO on extracted frames
-4. decide which roadway classes to use for the first prototype
-5. prepare a small annotated dataset if needed
-
-These steps will help move the project from setup into actual prototype development.
-
-```
-
-If you want, I can also make this into a **more professional capstone README** with sections like **Project Overview**, **Team**, **Setup**, **How to Run**, and **Next Milestone**.
-```
