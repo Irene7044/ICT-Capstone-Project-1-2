@@ -3,7 +3,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QDialog, QTextEdit, QMessageBox, QProgressBar
 )
 from PySide6.QtGui import QFont, QPixmap
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QUrl
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PySide6.QtMultimediaWidgets import QVideoWidget
 import sys
 import os
 import shutil
@@ -14,6 +16,8 @@ import cv2
 UPLOAD_FOLDER = "uploads"
 RESULT_FOLDER = "results"
 REPORT_FOLDER = "reports"
+INPUT_FOLDER = "testing resource"
+os.makedirs(INPUT_FOLDER, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 os.makedirs(REPORT_FOLDER, exist_ok=True) 
@@ -126,7 +130,13 @@ def video_finished(result_path):
 
 #Upload functions
 def upload_image():
-    file_path, _ = QFileDialog.getOpenFileName(window, "Select Image", "", "Images (*.jpg *.png *.jpeg)")
+    start_dir = os.path.abspath(INPUT_FOLDER)
+    file_path, _ = QFileDialog.getOpenFileName(
+        window,
+        "Select Image",
+        start_dir,
+        "Images (*.jpg *.png *.jpeg)"
+    )
     if file_path:
         dest_path = os.path.join(UPLOAD_FOLDER, os.path.basename(file_path))
         shutil.copy(file_path, dest_path)
@@ -134,41 +144,168 @@ def upload_image():
         detect_image(dest_path)
 
 def upload_video():
-    file_path, _ = QFileDialog.getOpenFileName(window, "Select Video", "", "Videos (*.mp4 *.avi *.mov)")
+    start_dir = os.path.abspath(INPUT_FOLDER)
+    file_path, _ = QFileDialog.getOpenFileName(
+        window,
+        "Select Video",
+        start_dir,
+        "Videos (*.mp4 *.avi *.mov)"
+    )
     if file_path:
         dest_path = os.path.join(UPLOAD_FOLDER, os.path.basename(file_path))
         shutil.copy(file_path, dest_path)
         QMessageBox.information(window, "Uploaded", f"Video uploaded to {dest_path}")
         detect_video(dest_path)
 
-#View folders
+#View folders / preview files
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp")
+VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv")
+TEXT_EXTENSIONS = (".txt", ".csv", ".json", ".log")
+
+def show_image_preview(file_path, title="Image Preview"):
+    dialog = QDialog(window)
+    dialog.setWindowTitle(title)
+    dialog.resize(900, 650)
+
+    layout = QVBoxLayout()
+
+    image_label = QLabel()
+    image_label.setAlignment(Qt.AlignCenter)
+
+    pixmap = QPixmap(file_path)
+    if pixmap.isNull():
+        QMessageBox.warning(window, "Error", "Could not load image preview.")
+        return
+
+    image_label.setPixmap(
+        pixmap.scaled(850, 550, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    )
+    layout.addWidget(image_label)
+
+    close_btn = QPushButton("Close")
+    close_btn.setFixedSize(100, 40)
+    close_btn.setStyleSheet(
+        "QPushButton {background-color:white;color:black;border-radius:8px;}"
+        "QPushButton:hover{background-color:#f0f0f0}"
+    )
+    close_btn.clicked.connect(dialog.close)
+    layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+
+    dialog.setLayout(layout)
+    dialog.exec()
+
+def show_text_preview(file_path, title="File Preview"):
+    dialog = QDialog(window)
+    dialog.setWindowTitle(title)
+    dialog.resize(900, 650)
+
+    layout = QVBoxLayout()
+
+    text_box = QTextEdit()
+    text_box.setReadOnly(True)
+    text_box.setStyleSheet("background-color: white; color: black;")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            text_box.setText(f.read())
+    except Exception as e:
+        text_box.setText(f"Could not open file:\n{file_path}\n\n{e}")
+
+    layout.addWidget(text_box)
+
+    close_btn = QPushButton("Close")
+    close_btn.setFixedSize(100, 40)
+    close_btn.setStyleSheet(
+        "QPushButton {background-color:white;color:black;border-radius:8px;}"
+        "QPushButton:hover{background-color:#f0f0f0}"
+    )
+    close_btn.clicked.connect(dialog.close)
+    layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+
+    dialog.setLayout(layout)
+    dialog.exec()
+
+def show_video_preview(file_path, title="Video Preview"):
+    dialog = QDialog(window)
+    dialog.setWindowTitle(title)
+    dialog.resize(900, 650)
+
+    layout = QVBoxLayout()
+
+    video_widget = QVideoWidget()
+    layout.addWidget(video_widget)
+
+    controls = QHBoxLayout()
+
+    play_btn = QPushButton("Play")
+    pause_btn = QPushButton("Pause")
+    close_btn = QPushButton("Close")
+
+    for btn in [play_btn, pause_btn, close_btn]:
+        btn.setFixedSize(100, 40)
+        btn.setStyleSheet(
+            "QPushButton {background-color:white;color:black;border-radius:8px;}"
+            "QPushButton:hover{background-color:#f0f0f0}"
+        )
+
+    controls.addWidget(play_btn)
+    controls.addWidget(pause_btn)
+    controls.addWidget(close_btn)
+    controls.setAlignment(Qt.AlignCenter)
+
+    layout.addLayout(controls)
+
+    player = QMediaPlayer(dialog)
+    audio_output = QAudioOutput(dialog)
+
+    player.setAudioOutput(audio_output)
+    player.setVideoOutput(video_widget)
+    player.setSource(QUrl.fromLocalFile(os.path.abspath(file_path)))
+
+    # Keep references alive
+    dialog.player = player
+    dialog.audio_output = audio_output
+
+    play_btn.clicked.connect(player.play)
+    pause_btn.clicked.connect(player.pause)
+    close_btn.clicked.connect(dialog.close)
+
+    dialog.setLayout(layout)
+    player.play()
+    dialog.exec()
+
+def browse_folder(folder_path, title, file_filter="All Files (*)"):
+    os.makedirs(folder_path, exist_ok=True)
+
+    dialog = QFileDialog(window, title, folder_path, file_filter)
+    dialog.setFileMode(QFileDialog.ExistingFile)
+    dialog.setViewMode(QFileDialog.Detail)
+
+    if dialog.exec():
+        selected_file = dialog.selectedFiles()[0]
+        lower_path = selected_file.lower()
+
+        if lower_path.endswith(IMAGE_EXTENSIONS):
+            show_image_preview(selected_file, title)
+        elif lower_path.endswith(VIDEO_EXTENSIONS):
+            show_video_preview(selected_file, title)
+        elif lower_path.endswith(TEXT_EXTENSIONS):
+            show_text_preview(selected_file, title)
+        else:
+            QMessageBox.information(
+                window,
+                "Selected File",
+                f"Preview is not supported for this file type yet.\n\n{selected_file}"
+            )
+
 def view_uploads():
-    folder_path = os.path.abspath(UPLOAD_FOLDER)
-    if sys.platform == "win32":
-        os.startfile(folder_path)
-    elif sys.platform == "darwin":
-        subprocess.run(["open", folder_path])
-    else:
-        subprocess.run(["xdg-open", folder_path])
+    browse_folder(UPLOAD_FOLDER, "View Uploads")
 
 def view_results():
-    folder_path = os.path.abspath(RESULT_FOLDER)
-    if sys.platform == "win32":
-        os.startfile(folder_path)
-    elif sys.platform == "darwin":
-        subprocess.run(["open", folder_path])
-    else:
-        subprocess.run(["xdg-open", folder_path])
+    browse_folder(RESULT_FOLDER, "View Results")
 
 def view_reports():
-    os.makedirs(REPORT_FOLDER, exist_ok=True)
-    folder_path = os.path.abspath(REPORT_FOLDER)
-    if sys.platform == "win32":
-        os.startfile(folder_path)
-    elif sys.platform == "darwin":
-        subprocess.run(["open", folder_path])
-    else:
-        subprocess.run(["xdg-open", folder_path])
+    browse_folder(REPORT_FOLDER, "View Reports")
 
 #Clear folders
 def clear_uploads():
