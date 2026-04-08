@@ -366,9 +366,17 @@ def show_user_guide():
 
 #Application
 app = QApplication(sys.argv)
-window = QWidget()
+
+EDGE_MARGIN = 8
+class MainWindow(QWidget):
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        background.setGeometry(0, 0, self.width(), self.height())
+    
+window = MainWindow()
 window.setWindowTitle("RoadSight Detection System")
 window.setGeometry(100, 100, 700, 500)
+
 
 #Background
 background = QLabel(window)

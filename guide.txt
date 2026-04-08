@@ -3,6 +3,7 @@
 pip install PySide6
 pip install opencv-python
 pip install ultralytics
+sudo apt install fonts-noto-color-emoji
 2. (Optional) Upgrade pip
 python -m pip install --upgrade pip
 3. Download YOLO model
