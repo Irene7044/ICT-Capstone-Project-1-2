@@ -22,7 +22,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 os.makedirs(REPORT_FOLDER, exist_ok=True) 
 
-#Video detection thread
+#Video detection 
 class VideoDetectionThread(QThread):
     progress = Signal(int)
     finished = Signal(str)
@@ -55,18 +55,7 @@ class VideoDetectionThread(QThread):
             if not ret:
                 break
 
-            results = model(frame)
-
-            for r in results:
-                for box in r.boxes:
-                    cls = int(box.cls[0])
-                    label = model.names[cls]
-                    if label.lower() == "traffic light":
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-                        cv2.putText(frame, label, (x1, y1-10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
-
+            frame = detect._run_models_on_frame(frame)
             out.write(frame)
             frame_count += 1
             self.progress.emit(int((frame_count / total_frames) * 100))
@@ -75,7 +64,7 @@ class VideoDetectionThread(QThread):
         out.release()
         self.finished.emit(self.output_path)
 
-#Detection functions
+# Image Detection
 def detect_image(image_path):
     import detect
     model = detect.model
@@ -90,16 +79,7 @@ def detect_image(image_path):
         progress_bar.setValue(0)
         return
 
-    results = model(img)
-    for r in results:
-        for box in r.boxes:
-            cls = int(box.cls[0])
-            label = model.names[cls]
-            if label.lower() == "traffic light":
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0,255,0), 2)
-                cv2.putText(img, label, (x1, y1-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+    img = detect._run_models_on_frame(img)
 
     result_path = os.path.join(RESULT_FOLDER, os.path.basename(image_path))
     cv2.imwrite(result_path, img)
@@ -108,6 +88,7 @@ def detect_image(image_path):
     progress_bar.setValue(0) 
     QMessageBox.information(window, "Result Saved", f"Image result saved to {result_path}")
 
+# Video Detection
 def detect_video(video_path):
     result_path = os.path.join(RESULT_FOLDER, os.path.basename(video_path))
     global thread
@@ -348,12 +329,12 @@ def show_user_guide():
         "- Roadside barriers\n"
 
         "Instructions:\n"
-        "1. Store system somewhere in a folder.\n"
-        "2. When the system is first launched, it will automatically create three folders: 'uploads', 'results', and 'reports' if you don't have one.\n"
-        "3. The image button is used for uploading an image file for analysis, image file type include *.jpg, *.png, *.jpeg.\n"
-        "4. The video button is used for uploading a video file for analysis, video file type include *.mp4, *.avi, *.mov.\n"
-        "5. All uploaded files will be saved in the 'uploads' folder, you can click the view uploads button to open the folder\n"
-        "6. After analysis, the output annotated images or video files will be saved in the 'results' folder, you can click the view results button to open the folder\n"
+        "1. Store the system somewhere in a folder.\n"
+        "2. When the system is first launched, it will automatically create three folders: 'uploads', 'results', and 'reports' if you do not already have one.\n"
+        "3. The image button is used for uploading an image file for analysis, acceptable image file types include *.jpg, *.png, *.jpeg.\n"
+        "4. The video button is used for uploading a video file for analysis, acceptable video file types include *.mp4, *.avi, *.mov.\n"
+        "5. All uploaded files will be saved in the 'uploads' folder, you can click the view uploads button to view the folder\n"
+        "6. After analysis, the output annotated images or video files will be saved in the 'results' folder, you can click the view results button to view the folder\n"
         "7. The view reports button is used to open the 'reports' folder, where you can find the generated report files.\n"
         "8. Clear uploads and clear results buttons are used to clear the files in the 'uploads' and 'results' folders respectively.\n"
     )
@@ -371,6 +352,7 @@ app = QApplication(sys.argv)
 
 EDGE_MARGIN = 8
 class MainWindow(QWidget):
+    # Make background responsive according to window size
     def resizeEvent(self, event):
         super().resizeEvent(event)
         background.setGeometry(0, 0, self.width(), self.height())
