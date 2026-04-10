@@ -1,8 +1,10 @@
 .venv/
 runs/
-datasets/
+datasets
 *.pt
 *.onnx
 __pycache__/
 *.pyc
-
+results/
+scripts/
+!models/pole_best.pt
