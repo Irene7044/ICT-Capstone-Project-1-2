@@ -37,14 +37,8 @@ Moving yolov8 into models folder:
 --- Model 2: Traffic Sign Detection ---
 
 Download:
-  pip install huggingface_hub
-  python -c "from huggingface_hub import hf_hub_download; \
-           hf_hub_download(repo_id='nezahatkorkmaz/traffic-sign-detection', \
-           filename='trafic.pt', local_dir='models')"
-
-Rename the model filename to traffic_sign:
-  mv models/trafic.pt models/traffic_sign.pt  (macOS/Linux)
-  move models\best.pt models\traffic_sign.pt  (Windows)
+  Go to the releases section in GitHub to download the model weight of the latest release, download the file named traffic_sign.pt
+  Move the model file into the models folder
 
 Your models/ folder should look like this when done:
   models/
