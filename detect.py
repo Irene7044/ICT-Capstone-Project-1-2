@@ -21,14 +21,16 @@ def _run_models_on_frame(frame):
                 cv2.putText(frame, label, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, TRAFFIC_LIGHT_COLOR, 2)
 
-    # Traffic signs — Labeled as 'Traffic signs' rather than type of sign
-    for r in sign_model(frame):
+    # Traffic signs
+    for r in sign_model.track(frame, persist=True):
         for box in r.boxes:
             conf = float(box.conf[0])
             if conf > 0.5:
+                cls   = int(box.cls[0])
+                label = sign_model.names[cls]
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 cv2.rectangle(frame, (x1, y1), (x2, y2), TRAFFIC_SIGN_COLOR, 2)
-                cv2.putText(frame, "Traffic Sign", (x1, y1 - 10),
+                cv2.putText(frame, label, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, TRAFFIC_SIGN_COLOR, 2)
 
     return frame
