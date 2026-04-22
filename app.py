@@ -207,6 +207,9 @@ def show_text_preview(file_path, title="File Preview"):
     dialog.exec()
 
 def show_video_preview(file_path, title="Video Preview"):
+    from PySide6.QtWidgets import QSlider
+    from PySide6.QtCore import QTimer
+
     dialog = QDialog(window)
     dialog.setWindowTitle(title)
     dialog.resize(900, 650)
@@ -216,9 +219,40 @@ def show_video_preview(file_path, title="Video Preview"):
     video_widget = QVideoWidget()
     layout.addWidget(video_widget)
 
-    controls = QHBoxLayout()
+    # ── Seek slider ──────────────────────────────────────────
+    seek_slider = QSlider(Qt.Horizontal)
+    seek_slider.setRange(0, 0)        # range updated once video loads
+    seek_slider.setStyleSheet("""
+        QSlider::groove:horizontal {
+            height: 6px;
+            background: #cccccc;
+            border-radius: 3px;
+        }
+        QSlider::handle:horizontal {
+            background: white;
+            border: 1px solid #999;
+            width: 14px;
+            height: 14px;
+            margin: -4px 0;
+            border-radius: 7px;
+        }
+        QSlider::sub-page:horizontal {
+            background: #4a90d9;
+            border-radius: 3px;
+        }
+    """)
+    layout.addWidget(seek_slider)
 
-    play_btn = QPushButton("Play")
+    # ── Time label ───────────────────────────────────────────
+    time_label = QLabel("0:00 / 0:00")
+    time_label.setAlignment(Qt.AlignCenter)
+    time_label.setStyleSheet("color: black; font-size: 12px;")
+    layout.addWidget(time_label)
+    layout.setStretchFactor(video_widget, 1)
+
+    # ── Control buttons ──────────────────────────────────────
+    controls = QHBoxLayout()
+    play_btn  = QPushButton("Play")
     pause_btn = QPushButton("Pause")
     close_btn = QPushButton("Close")
 
@@ -233,19 +267,62 @@ def show_video_preview(file_path, title="Video Preview"):
     controls.addWidget(pause_btn)
     controls.addWidget(close_btn)
     controls.setAlignment(Qt.AlignCenter)
-
     layout.addLayout(controls)
 
-    player = QMediaPlayer(dialog)
+    # ── Media player setup ───────────────────────────────────
+    player       = QMediaPlayer(dialog)
     audio_output = QAudioOutput(dialog)
-
     player.setAudioOutput(audio_output)
     player.setVideoOutput(video_widget)
     player.setSource(QUrl.fromLocalFile(os.path.abspath(file_path)))
 
-    # Keep references alive
-    dialog.player = player
+    # Keep references alive so Python doesn't garbage collect them
+    dialog.player       = player
     dialog.audio_output = audio_output
+
+    # ── Helper: format milliseconds → "m:ss" ─────────────────
+    def ms_to_str(ms):
+        if ms < 0:
+            return "0:00"
+        total_seconds = ms // 1000
+        minutes       = total_seconds // 60
+        seconds       = total_seconds % 60
+        return f"{minutes}:{seconds:02d}"
+
+    # ── Update slider + time label as video plays ─────────────
+    # is_seeking flag prevents a feedback loop where updating
+    # the slider position triggers another seek
+    is_seeking = [False]
+
+    def on_position_changed(position):
+        if not is_seeking[0]:
+            seek_slider.setValue(position)
+        duration = player.duration()
+        time_label.setText(f"{ms_to_str(position)} / {ms_to_str(duration)}")
+
+    def on_duration_changed(duration):
+        seek_slider.setRange(0, duration)
+
+    # ── Seek when user moves the slider ──────────────────────
+    def on_slider_pressed():
+        is_seeking[0] = True
+
+    def on_slider_released():
+        player.setPosition(seek_slider.value())
+        is_seeking[0] = False
+
+    def on_slider_moved(position):
+        # Update time label while dragging even before releasing
+        duration = player.duration()
+        time_label.setText(f"{ms_to_str(position)} / {ms_to_str(duration)}")
+
+    # ── Connect everything ────────────────────────────────────
+    player.positionChanged.connect(on_position_changed)
+    player.durationChanged.connect(on_duration_changed)
+
+    seek_slider.sliderPressed.connect(on_slider_pressed)
+    seek_slider.sliderReleased.connect(on_slider_released)
+    seek_slider.sliderMoved.connect(on_slider_moved)
 
     play_btn.clicked.connect(player.play)
     pause_btn.clicked.connect(player.pause)
