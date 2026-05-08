@@ -1,13 +1,7 @@
 from ultralytics import YOLO
 import cv2
 
-model = YOLO("models/yolov8n.pt")
-
-def detect_traffic_light(input_path, output_path):
-    if input_path.lower().endswith(('.png', '.jpg', '.jpeg')):
-        detect_image(input_path, output_path)
-    else:
-        detect_video(input_path, output_path)
+#model = YOLO("models/yolov8n.pt")
 
 
 def detect_image(input_image, output_image):
@@ -21,9 +15,7 @@ def detect_image(input_image, output_image):
 
             if label == "traffic light":
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0,255,0), 2)
-                cv2.putText(img, label, (x1, y1-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+                cv2.rectangle(img, (x1, y1), (x2, y2), (0,0,255), 2)
 
     cv2.imwrite(output_image, img)
 
@@ -56,11 +48,16 @@ def detect_video(input_video, output_video):
 
                 if label == "traffic light":
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-                    cv2.putText(frame, label, (x1, y1-10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0,0,255), 2)
 
         out.write(frame)
 
     cap.release()
     out.release()
+
+
+def detect_traffic_light(input_path, output_path):
+    if input_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+        detect_image(input_path, output_path)
+    else:
+        detect_video(input_path, output_path)

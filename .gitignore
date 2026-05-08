@@ -5,4 +5,4 @@ datasets/
 *.onnx
 __pycache__/
 *.pyc
-
+.reports/
