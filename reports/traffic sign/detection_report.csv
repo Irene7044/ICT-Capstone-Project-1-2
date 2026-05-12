@@ -1,0 +1,17 @@
+Class,Count
+footpath,1480
+lane_marking,714
+pole,1399
+traffic_light,188
+road_barrier,81
+bike_lane,1331
+other_sign,266
+stop_line,106
+crosswalk_marking,62
+trunk,68
+one_way,7
+information,1
+turn_restriction,10
+no_parking,5
+no_stopping,1
+stop_sign,1

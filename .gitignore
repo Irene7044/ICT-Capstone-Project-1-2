@@ -7,3 +7,6 @@ __pycache__/
 *.pyc
 .reports/
 .testing resource/
+.reports/
+.results/
+.uploads/
