@@ -736,9 +736,11 @@ def process_video(file_path, loaded_models):
         print(f"Cannot create output video: {output_path}")
         return False
 
-    # One set of seen IDs per model, per label
-    # e.g. seen_ids["road_barrier"] = {1, 2, 5, 7, ...}
+    # label -> set of unique integer track IDs seen so far
     seen_ids = {}
+
+    # (display_label, track_id) -> snapshot frame captured on first detection
+    first_seen_frames = {}
 
     frame_count = 0
     last_result_frame = None
@@ -755,13 +757,12 @@ def process_video(file_path, loaded_models):
 
             for item in loaded_models:
                 config = item["config"]
-                model = item["model"]
+                model  = item["model"]
 
-                # Run tracker instead of plain predict
                 track_results = model.track(
                     source=frame,
                     conf=config["conf"],
-                    persist=True,      # keeps track state between frames
+                    persist=True,
                     tracker="bytetrack.yaml",
                     save=False,
                     verbose=False,
@@ -772,7 +773,6 @@ def process_video(file_path, loaded_models):
 
                 result = track_results[0]
 
-                # Draw boxes/masks as before
                 result_frame, _ = draw_masks_and_boxes(
                     frame=result_frame,
                     result=result,
@@ -784,21 +784,22 @@ def process_video(file_path, loaded_models):
                     class_conf=config["class_conf"],
                 )
 
-                # Count unique IDs
                 boxes = result.boxes
                 if boxes is None or boxes.id is None:
                     continue
 
                 track_ids = boxes.id.cpu().numpy().astype(int)
                 class_ids = boxes.cls.cpu().numpy().astype(int)
-                confs = boxes.conf.cpu().numpy()
+                confs     = boxes.conf.cpu().numpy()
 
-                allowed = normalize_label_set(config["allowed_labels"])
+                allowed    = normalize_label_set(config["allowed_labels"])
                 class_conf = normalize_conf_dict(config["class_conf"])
 
                 for i, track_id in enumerate(track_ids):
+                    track_id = int(track_id)
+
                     label = get_label_name(result, class_ids[i])
-                    conf = float(confs[i])
+                    conf  = float(confs[i])
 
                     if allowed is not None and label not in allowed:
                         continue
@@ -811,11 +812,16 @@ def process_video(file_path, loaded_models):
                         else label
                     )
 
-                    key = display_label
-                    if key not in seen_ids:
-                        seen_ids[key] = set()
+                    if display_label not in seen_ids:
+                        seen_ids[display_label] = set()
 
-                    seen_ids[key].add(track_id)
+                    # Check BEFORE adding so we can capture the first frame
+                    is_new = track_id not in seen_ids[display_label]
+                    seen_ids[display_label].add(track_id)
+
+                    if is_new:
+                        obj_key = (display_label, track_id)
+                        first_seen_frames[obj_key] = frame.copy()
 
             last_result_frame = result_frame
 
@@ -825,14 +831,25 @@ def process_video(file_path, loaded_models):
         if frame_count % 30 == 0:
             print(f"Frames processed: {frame_count}")
 
+    # Release handles before doing anything else
     cap.release()
     writer.release()
 
-    # Convert seen ID sets to counts
+    # Save first-seen snapshots for verification
+    snapshot_dir = REPORT_DIR / file_path.stem / "snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    for (label, tid), snap_frame in first_seen_frames.items():
+        snap_path = snapshot_dir / f"{label}_id{tid}.jpg"
+        cv2.imwrite(str(snap_path), snap_frame)
+
+    print(f"Snapshots saved to: {snapshot_dir}")
+
+    # Convert seen ID sets to final counts
     total_counts = {label: len(ids) for label, ids in seen_ids.items()}
 
     print(f"Video: {file_path.name}")
-    print(f"Frames: {frame_count}")
+    print(f"Frames processed: {frame_count}")
     print_counts("Unique detections:", total_counts)
     print(f"Output: {output_path}")
 

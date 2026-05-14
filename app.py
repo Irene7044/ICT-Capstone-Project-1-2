@@ -186,8 +186,8 @@ VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv")
 TEXT_EXTENSIONS = (".txt", ".csv", ".json", ".log")
 
 
-def show_image_preview(file_path, title="Image Preview"):
-    dialog = QDialog(window)
+def show_image_preview(file_path, title="Image Preview", parent=None):
+    dialog = QDialog(parent or window)
     dialog.setWindowTitle(title)
     dialog.resize(900, 650)
 
@@ -222,8 +222,8 @@ def show_image_preview(file_path, title="Image Preview"):
     dialog.exec()
 
 
-def show_text_preview(file_path, title="File Preview"):
-    dialog = QDialog(window)
+def show_text_preview(file_path, title="File Preview", parent=None):
+    dialog = QDialog(parent or window)
     dialog.setWindowTitle(title)
     dialog.resize(900, 650)
 
@@ -255,8 +255,8 @@ def show_text_preview(file_path, title="File Preview"):
     dialog.exec()
 
 
-def show_video_preview(file_path, title="Video Preview"):
-    dialog = QDialog(window)
+def show_video_preview(file_path, title="Video Preview", parent=None):
+    dialog = QDialog(parent or window)
     dialog.setWindowTitle(title)
     dialog.resize(900, 650)
 
@@ -407,10 +407,10 @@ def show_video_preview(file_path, title="Video Preview"):
 
 # Format report output and colour code each detected element
 
-def show_csv_preview(file_path, title="Report Preview"):
+def show_csv_preview(file_path, title="Report Preview", parent=None):
     from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea
 
-    dialog = QDialog(window)
+    dialog = QDialog(parent or window)
     dialog.setWindowTitle(title)
     dialog.resize(1000, 700)
 
@@ -612,15 +612,16 @@ def browse_folder(folder_path, title, file_filter="All Files (*)"):
     if dialog.exec():
         selected_file = dialog.selectedFiles()[0]
         lower_path    = selected_file.lower()
+        current_dir   = os.path.dirname(selected_file)  # remember where we are
 
         if lower_path.endswith(IMAGE_EXTENSIONS):
-            show_image_preview(selected_file, title)
+            show_image_preview(selected_file, title, parent=dialog)
         elif lower_path.endswith(VIDEO_EXTENSIONS):
-            show_video_preview(selected_file, title)
-        elif lower_path.endswith(".csv"):               # ← CSV gets table view
-            show_csv_preview(selected_file, title)
+            show_video_preview(selected_file, title, parent=dialog)
+        elif lower_path.endswith(".csv"):
+            show_csv_preview(selected_file, title, parent=dialog)
         elif lower_path.endswith(TEXT_EXTENSIONS):
-            show_text_preview(selected_file, title)
+            show_text_preview(selected_file, title, parent=dialog)
         else:
             QMessageBox.information(
                 window,
@@ -628,6 +629,8 @@ def browse_folder(folder_path, title, file_filter="All Files (*)"):
                 f"Preview is not supported for this file type yet.\n\n{selected_file}"
             )
 
+        # Reopen from the same directory the user was browsing, not the root folder
+        browse_folder(current_dir, title, file_filter)
 
 def view_uploads():
     browse_folder(UPLOAD_FOLDER, "View Uploads")
