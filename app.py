@@ -405,6 +405,202 @@ def show_video_preview(file_path, title="Video Preview"):
     player.play()
     dialog.exec()
 
+# Format report output and colour code each detected element
+
+def show_csv_preview(file_path, title="Report Preview"):
+    from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea
+
+    dialog = QDialog(window)
+    dialog.setWindowTitle(title)
+    dialog.resize(1000, 700)
+
+    layout = QVBoxLayout()
+
+    # ── File name label ───────────────────────────────────────
+    name_label = QLabel(os.path.basename(file_path))
+    name_label.setFont(QFont("Arial", 11, QFont.Bold))
+    name_label.setAlignment(Qt.AlignCenter)
+    name_label.setStyleSheet("color: black; padding: 6px;")
+    layout.addWidget(name_label)
+
+    # ── Table ─────────────────────────────────────────────────
+    table = QTableWidget()
+    table.setStyleSheet("""
+        QTableWidget {
+            background-color: white;
+            color: black;
+            gridline-color: #dddddd;
+            font-size: 12px;
+        }
+        QHeaderView::section {
+            background-color: #4a90d9;
+            color: white;
+            font-weight: bold;
+            padding: 6px;
+            border: none;
+        }
+        QTableWidget::item {
+            padding: 4px;
+            color: black;
+            background-color: white;
+        }
+        QTableWidget::item:alternate {
+            background-color: #f5f8ff;
+            color: black;
+        }
+        QTableWidget::item:selected {
+            background-color: #4a90d9;
+            color: white;
+        }
+        QTableWidget::item:alternate:selected {
+            background-color: #4a90d9;
+            color: white;
+        }
+    """)
+    table.setAlternatingRowColors(True)
+    table.setEditTriggers(QTableWidget.NoEditTriggers)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    table.horizontalHeader().setStretchLastSection(True)
+    table.verticalHeader().setVisible(False)
+
+    # ── Read CSV first, then build everything else ────────────
+    headers = []
+    data = []
+
+    try:
+        import csv
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        if rows:
+            headers = rows[0]
+            data = rows[1:]
+
+            table.setColumnCount(len(headers))
+            table.setRowCount(len(data))
+            table.setHorizontalHeaderLabels(headers)
+
+            for row_idx, row in enumerate(data):
+                for col_idx, value in enumerate(row):
+                    item = QTableWidgetItem(value.strip())
+                    item.setTextAlignment(Qt.AlignCenter)
+
+                    if "traffic_light" in value.lower():
+                        item.setForeground(
+                            __import__("PySide6.QtGui", fromlist=["QColor"]).QColor("#2e7d32")
+                        )
+                    elif "traffic_sign" in value.lower():
+                        item.setForeground(
+                            __import__("PySide6.QtGui", fromlist=["QColor"]).QColor("#e65100")
+                        )
+
+                    table.setItem(row_idx, col_idx, item)
+
+    except Exception as e:
+        table.setRowCount(1)
+        table.setColumnCount(1)
+        table.setItem(0, 0, QTableWidgetItem(f"Could not read file: {e}"))
+
+    layout.addWidget(table)
+
+    # ── Pills — one per detected class ───────────────────────
+    try:
+        class_col = next(i for i, h in enumerate(headers) if h.lower() == "class")
+        count_col = next(i for i, h in enumerate(headers) if h.lower() == "count")
+
+        class_totals = {}
+        for r in data:
+            if len(r) > max(class_col, count_col):
+                label = r[class_col].strip().lower()
+                try:
+                    count = int(r[count_col].strip())
+                except ValueError:
+                    count = 0
+                class_totals[label] = class_totals.get(label, 0) + count
+
+        pill_colors = {
+            "traffic_light":     ("#e8f5e9", "#2e7d32"),
+            "road_barrier":      ("#fff3e0", "#e65100"),
+            "trunk":             ("#fce4ec", "#880e4f"),
+            "pole":              ("#f3e5f5", "#6a1b9a"),
+            "footpath":          ("#e3f2fd", "#0d47a1"),
+            "bike_lane":         ("#e8eaf6", "#283593"),
+            "crosswalk_marking": ("#e0f7fa", "#006064"),
+            "lane_marking":      ("#fff9c4", "#f57f17"),
+            "stop_line":         ("#fbe9e7", "#bf360c"),
+        }
+        default_pill = ("#f5f5f5", "#333333")
+
+        pills_widget = QWidget()
+        pills_layout = QHBoxLayout(pills_widget)
+        pills_layout.setAlignment(Qt.AlignCenter)
+        pills_layout.setSpacing(8)
+        pills_layout.setContentsMargins(8, 4, 8, 4)
+
+        for label, count in sorted(class_totals.items()):
+            bg, fg = pill_colors.get(label, default_pill)
+            pill = QLabel(f"{label.replace('_', ' ')}: {count}")
+            pill.setAlignment(Qt.AlignCenter)
+            pill.setStyleSheet(f"""
+                background-color: {bg};
+                color: {fg};
+                border-radius: 10px;
+                padding: 3px 10px;
+                font-size: 11px;
+                font-weight: bold;
+            """)
+            pills_layout.addWidget(pill)
+
+        # Wrap in a scroll area in case there are many classes
+        scroll = QScrollArea()
+        scroll.setWidget(pills_widget)
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(48)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        layout.addWidget(scroll)
+
+    except Exception:
+        pass
+
+    # ── Buttons ───────────────────────────────────────────────
+    btn_row = QHBoxLayout()
+
+    export_btn = QPushButton("Export CSV")
+    export_btn.setFixedSize(120, 40)
+    export_btn.setStyleSheet(
+        "QPushButton {background-color:#4a90d9;color:white;border-radius:8px;}"
+        "QPushButton:hover{background-color:#357abd}"
+    )
+
+    close_btn = QPushButton("Close")
+    close_btn.setFixedSize(100, 40)
+    close_btn.setStyleSheet(
+        "QPushButton {background-color:white;color:black;border-radius:8px;}"
+        "QPushButton:hover{background-color:#f0f0f0}"
+    )
+
+    def export_csv():
+        save_path, _ = QFileDialog.getSaveFileName(
+            dialog, "Export CSV", os.path.basename(file_path), "CSV Files (*.csv)"
+        )
+        if save_path:
+            shutil.copy(file_path, save_path)
+            QMessageBox.information(dialog, "Exported", f"Saved to:\n{save_path}")
+
+    export_btn.clicked.connect(export_csv)
+    close_btn.clicked.connect(dialog.close)
+
+    btn_row.addWidget(export_btn)
+    btn_row.addWidget(close_btn)
+    btn_row.setAlignment(Qt.AlignCenter)
+    layout.addLayout(btn_row)
+
+    dialog.setLayout(layout)
+    dialog.exec()
+
 
 def browse_folder(folder_path, title, file_filter="All Files (*)"):
     os.makedirs(folder_path, exist_ok=True)
@@ -415,17 +611,16 @@ def browse_folder(folder_path, title, file_filter="All Files (*)"):
 
     if dialog.exec():
         selected_file = dialog.selectedFiles()[0]
-        lower_path = selected_file.lower()
+        lower_path    = selected_file.lower()
 
         if lower_path.endswith(IMAGE_EXTENSIONS):
             show_image_preview(selected_file, title)
-
         elif lower_path.endswith(VIDEO_EXTENSIONS):
             show_video_preview(selected_file, title)
-
+        elif lower_path.endswith(".csv"):               # ← CSV gets table view
+            show_csv_preview(selected_file, title)
         elif lower_path.endswith(TEXT_EXTENSIONS):
             show_text_preview(selected_file, title)
-
         else:
             QMessageBox.information(
                 window,
@@ -691,7 +886,7 @@ class MainWindow(QWidget):
             clear_folder(RESULT_FOLDER)
             event.accept()
         else:
-            event.ignore()
+            event.accept()
 
 
 window = MainWindow()

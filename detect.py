@@ -714,22 +714,16 @@ def process_image(file_path, loaded_models):
 
 
 def process_video(file_path, loaded_models):
-    """
-    Process one video file.
-    """
     cap = cv2.VideoCapture(str(file_path))
-
     if not cap.isOpened():
         print(f"Cannot open video: {file_path}")
         return False
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-
     if fps <= 0:
         fps = 25
 
     output_path = get_output_path(file_path)
-
     writer = cv2.VideoWriter(
         str(output_path),
         cv2.VideoWriter_fourcc(*"mp4v"),
@@ -742,47 +736,107 @@ def process_video(file_path, loaded_models):
         print(f"Cannot create output video: {output_path}")
         return False
 
-    frame_count = 0
-    processed_count = 0
-    total_counts = {}
+    # One set of seen IDs per model, per label
+    # e.g. seen_ids["road_barrier"] = {1, 2, 5, 7, ...}
+    seen_ids = {}
 
-    last_result = None
+    frame_count = 0
+    last_result_frame = None
 
     while True:
         ret, frame = cap.read()
-
         if not ret:
             break
 
         frame = cv2.resize(frame, VIDEO_SIZE)
 
-        if frame_count % SKIP_FRAMES == 0 or last_result is None:
-            result, counts = process_frame(frame, loaded_models)
-            last_result = result
+        if frame_count % SKIP_FRAMES == 0 or last_result_frame is None:
+            result_frame = frame.copy()
 
-            total_counts = merge_counts(total_counts, counts)
-            processed_count += 1
+            for item in loaded_models:
+                config = item["config"]
+                model = item["model"]
 
-        else:
-            result = last_result
+                # Run tracker instead of plain predict
+                track_results = model.track(
+                    source=frame,
+                    conf=config["conf"],
+                    persist=True,      # keeps track state between frames
+                    tracker="bytetrack.yaml",
+                    save=False,
+                    verbose=False,
+                )
 
-        writer.write(result)
+                if not track_results:
+                    continue
+
+                result = track_results[0]
+
+                # Draw boxes/masks as before
+                result_frame, _ = draw_masks_and_boxes(
+                    frame=result_frame,
+                    result=result,
+                    allowed_labels=config["allowed_labels"],
+                    force_display_label=config["force_label"],
+                    alpha=config["alpha"],
+                    draw_contours=True,
+                    draw_boxes=True,
+                    class_conf=config["class_conf"],
+                )
+
+                # Count unique IDs
+                boxes = result.boxes
+                if boxes is None or boxes.id is None:
+                    continue
+
+                track_ids = boxes.id.cpu().numpy().astype(int)
+                class_ids = boxes.cls.cpu().numpy().astype(int)
+                confs = boxes.conf.cpu().numpy()
+
+                allowed = normalize_label_set(config["allowed_labels"])
+                class_conf = normalize_conf_dict(config["class_conf"])
+
+                for i, track_id in enumerate(track_ids):
+                    label = get_label_name(result, class_ids[i])
+                    conf = float(confs[i])
+
+                    if allowed is not None and label not in allowed:
+                        continue
+                    if not should_keep_detection(label, conf, class_conf):
+                        continue
+
+                    display_label = (
+                        normalize_label_name(config["force_label"])
+                        if config["force_label"]
+                        else label
+                    )
+
+                    key = display_label
+                    if key not in seen_ids:
+                        seen_ids[key] = set()
+
+                    seen_ids[key].add(track_id)
+
+            last_result_frame = result_frame
+
+        writer.write(last_result_frame)
         frame_count += 1
 
         if frame_count % 30 == 0:
-            print(f"Frames read: {frame_count}, frames detected: {processed_count}")
+            print(f"Frames processed: {frame_count}")
 
     cap.release()
     writer.release()
 
+    # Convert seen ID sets to counts
+    total_counts = {label: len(ids) for label, ids in seen_ids.items()}
+
     print(f"Video: {file_path.name}")
-    print(f"Frames read: {frame_count}")
-    print(f"Frames actually detected: {processed_count}")
-    print_counts("Total detections:", total_counts)
+    print(f"Frames: {frame_count}")
+    print_counts("Unique detections:", total_counts)
     print(f"Output: {output_path}")
 
     save_report_csv(file_path, total_counts)
-
     return True
 
 
