@@ -163,7 +163,7 @@ def upload_video():
         window,
         "Select Video",
         start_dir,
-        "Videos (*.mp4 *.avi *.mov *.mkv)"
+        "Videos (*.mp4 *.avi *.mov *.MOV *.mkv *.MKV)"
     )
 
     if file_path:
