@@ -258,10 +258,11 @@ def show_text_preview(file_path, title="File Preview", parent=None):
 def show_video_preview(file_path, title="Video Preview", parent=None):
     dialog = QDialog(parent or window)
     dialog.setWindowTitle(title)
-    dialog.resize(900, 650)
+    dialog.resize(900, 650) # Initialise dialogue size
 
     layout = QVBoxLayout()
 
+    # Video widget - automatically resize video screen size when window size changes 
     video_widget = QVideoWidget()
     layout.addWidget(video_widget)
 
@@ -269,11 +270,15 @@ def show_video_preview(file_path, title="Video Preview", parent=None):
     # Seek slider
     # =========================
 
+    # Creating the video slider 
     seek_slider = QSlider(Qt.Horizontal)
+
+    # Initialise range to 0 since video duration is unknown initially
     seek_slider.setRange(0, 0)
 
+    # Slider design style 
     seek_slider.setStyleSheet("""
-        QSlider::groove:horizontal {
+        QSlider::groove:horizontal { 
             height: 6px;
             background: #cccccc;
             border-radius: 3px;
@@ -298,11 +303,13 @@ def show_video_preview(file_path, title="Video Preview", parent=None):
     # Time label
     # =========================
 
+    # current_time / total time of video, initialises to 0
     time_label = QLabel("0:00 / 0:00")
-    time_label.setAlignment(Qt.AlignCenter)
+    time_label.setAlignment(Qt.AlignCenter) 
     time_label.setStyleSheet("color: black; font-size: 12px;")
     layout.addWidget(time_label)
 
+    # Stretch video_widget
     layout.setStretchFactor(video_widget, 1)
 
     # =========================
@@ -336,8 +343,10 @@ def show_video_preview(file_path, title="Video Preview", parent=None):
     player = QMediaPlayer(dialog)
     audio_output = QAudioOutput(dialog)
 
-    player.setAudioOutput(audio_output)
-    player.setVideoOutput(video_widget)
+    player.setAudioOutput(audio_output) # connect output sound to speakers
+    player.setVideoOutput(video_widget) # connect video to video widget 
+
+    # Loads selected video file
     player.setSource(QUrl.fromLocalFile(os.path.abspath(file_path)))
 
     # Keep references alive.
@@ -348,6 +357,7 @@ def show_video_preview(file_path, title="Video Preview", parent=None):
     # Helper function
     # =========================
 
+    # Converts time in milliseconds to 00:00 format
     def ms_to_str(ms):
         if ms < 0:
             return "0:00"
@@ -362,25 +372,33 @@ def show_video_preview(file_path, title="Video Preview", parent=None):
     # Slider update logic
     # =========================
 
+    # Check if user is dragging the slider (Default = false)
     is_seeking = [False]
 
+    # Normal playback: Change slider position & video progress as video progresses
     def on_position_changed(position):
+        # Update slider position once released 
         if not is_seeking[0]:
             seek_slider.setValue(position)
 
+        # Update displayed time: current / remaining time
         duration = player.duration()
         time_label.setText(f"{ms_to_str(position)} / {ms_to_str(duration)}")
 
+    # Set video time range once duration is known
     def on_duration_changed(duration):
         seek_slider.setRange(0, duration)
 
+    # When slider is pressed change is_seek to true
     def on_slider_pressed():
         is_seeking[0] = True
 
+    # When slider is released, change video progress and result is_seeking to false
     def on_slider_released():
         player.setPosition(seek_slider.value())
         is_seeking[0] = False
 
+    # When slider position changes, update duration and time_label
     def on_slider_moved(position):
         duration = player.duration()
         time_label.setText(f"{ms_to_str(position)} / {ms_to_str(duration)}")
@@ -389,19 +407,23 @@ def show_video_preview(file_path, title="Video Preview", parent=None):
     # Signal connections
     # =========================
 
-    player.positionChanged.connect(on_position_changed)
-    player.durationChanged.connect(on_duration_changed)
+    # When playing a video normally
+    player.positionChanged.connect(on_position_changed) # Video progressing normally, automatically change slider position & current time
+    player.durationChanged.connect(on_duration_changed) # Set slider range
 
-    seek_slider.sliderPressed.connect(on_slider_pressed)
-    seek_slider.sliderReleased.connect(on_slider_released)
-    seek_slider.sliderMoved.connect(on_slider_moved)
+    # When slider is pressed -> released = moved / dragged, call functions respectively
+    seek_slider.sliderPressed.connect(on_slider_pressed) # Set is_seeking = true
+    seek_slider.sliderReleased.connect(on_slider_released) # Change slider position & is_seeking = false
+    seek_slider.sliderMoved.connect(on_slider_moved) # Update current_time / total_time
 
+    # When clicked on play, pause, close buttons
     play_btn.clicked.connect(player.play)
     pause_btn.clicked.connect(player.pause)
     close_btn.clicked.connect(dialog.close)
 
     dialog.setLayout(layout)
 
+    # Autoplays video when preview opens
     player.play()
     dialog.exec()
 
@@ -410,6 +432,7 @@ def show_video_preview(file_path, title="Video Preview", parent=None):
 def show_csv_preview(file_path, title="Report Preview", parent=None):
     from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea
 
+    # Create & initialise report dialogue window 
     dialog = QDialog(parent or window)
     dialog.setWindowTitle(title)
     dialog.resize(1000, 700)
@@ -424,7 +447,11 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
     layout.addWidget(name_label)
 
     # ── Table ─────────────────────────────────────────────────
+    
+    # Create table widget 
     table = QTableWidget()
+
+    # Table design style (Header colour, alternating row colours, highlighted row colours, font sizes)
     table.setStyleSheet("""
         QTableWidget {
             background-color: white;
@@ -457,8 +484,12 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
             color: white;
         }
     """)
+
     table.setAlternatingRowColors(True)
+
     table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+    # Column resize to fix texts
     table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
     table.horizontalHeader().setStretchLastSection(True)
     table.verticalHeader().setVisible(False)
@@ -470,45 +501,44 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
     try:
         import csv
         with open(file_path, "r", encoding="utf-8") as f:
+            # Read generated CSV content & convert to list of rows
             reader = csv.reader(f)
             rows = list(reader)
 
         if rows:
+            # Separate headers & data
             headers = rows[0]
             data = rows[1:]
 
+            # Set table dimensions according to the number of header & data 
             table.setColumnCount(len(headers))
             table.setRowCount(len(data))
+            # Set header names
             table.setHorizontalHeaderLabels(headers)
 
+            # Fill table cells
             for row_idx, row in enumerate(data):
                 for col_idx, value in enumerate(row):
                     item = QTableWidgetItem(value.strip())
                     item.setTextAlignment(Qt.AlignCenter)
-
-                    if "traffic_light" in value.lower():
-                        item.setForeground(
-                            __import__("PySide6.QtGui", fromlist=["QColor"]).QColor("#2e7d32")
-                        )
-                    elif "traffic_sign" in value.lower():
-                        item.setForeground(
-                            __import__("PySide6.QtGui", fromlist=["QColor"]).QColor("#e65100")
-                        )
-
                     table.setItem(row_idx, col_idx, item)
 
+    # When no CSV found / error opening CSV
     except Exception as e:
         table.setRowCount(1)
         table.setColumnCount(1)
         table.setItem(0, 0, QTableWidgetItem(f"Could not read file: {e}"))
 
+    # Add table widget
     layout.addWidget(table)
 
     # ── Pills — one per detected class ───────────────────────
     try:
+        # Arrays of different detected elements & their count 
         class_col = next(i for i, h in enumerate(headers) if h.lower() == "class")
         count_col = next(i for i, h in enumerate(headers) if h.lower() == "count")
 
+        # Calculate total for each detected element
         class_totals = {}
         for r in data:
             if len(r) > max(class_col, count_col):
@@ -519,6 +549,7 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
                     count = 0
                 class_totals[label] = class_totals.get(label, 0) + count
 
+        # Colour code total count for each element
         pill_colors = {
             "traffic_light":     ("#e8f5e9", "#2e7d32"),
             "road_barrier":      ("#fff3e0", "#e65100"),
@@ -530,18 +561,23 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
             "lane_marking":      ("#fff9c4", "#f57f17"),
             "stop_line":         ("#fbe9e7", "#bf360c"),
         }
+        # Default grey for all road signs, as there are 24 classes
         default_pill = ("#f5f5f5", "#333333")
 
+        # Position total count at the bottom of CSV report
         pills_widget = QWidget()
         pills_layout = QHBoxLayout(pills_widget)
         pills_layout.setAlignment(Qt.AlignCenter)
         pills_layout.setSpacing(8)
         pills_layout.setContentsMargins(8, 4, 8, 4)
 
+        # Loop through all total counts and sort them
         for label, count in sorted(class_totals.items()):
-            bg, fg = pill_colors.get(label, default_pill)
-            pill = QLabel(f"{label.replace('_', ' ')}: {count}")
-            pill.setAlignment(Qt.AlignCenter)
+            bg, fg = pill_colors.get(label, default_pill) # Get set colours for each class
+            pill = QLabel(f"{label.replace('_', ' ')}: {count}") # Create label (element: count)
+            pill.setAlignment(Qt.AlignCenter) # centre text
+
+            # Style total count text
             pill.setStyleSheet(f"""
                 background-color: {bg};
                 color: {fg};
@@ -550,9 +586,9 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
                 font-size: 11px;
                 font-weight: bold;
             """)
-            pills_layout.addWidget(pill)
+            pills_layout.addWidget(pill) # Add wifget to layout
 
-        # Wrap in a scroll area in case there are many classes
+        # Create scroll slider when number of class exceed page width
         scroll = QScrollArea()
         scroll.setWidget(pills_widget)
         scroll.setWidgetResizable(True)
@@ -562,12 +598,14 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         layout.addWidget(scroll)
 
+    # Error handling
     except Exception:
         pass
 
     # ── Buttons ───────────────────────────────────────────────
     btn_row = QHBoxLayout()
 
+    # Export button design style & size
     export_btn = QPushButton("Export CSV")
     export_btn.setFixedSize(120, 40)
     export_btn.setStyleSheet(
@@ -575,6 +613,7 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
         "QPushButton:hover{background-color:#357abd}"
     )
 
+    # Close button design style & size
     close_btn = QPushButton("Close")
     close_btn.setFixedSize(100, 40)
     close_btn.setStyleSheet(
@@ -583,16 +622,19 @@ def show_csv_preview(file_path, title="Report Preview", parent=None):
     )
 
     def export_csv():
+        # user-selected file path
         save_path, _ = QFileDialog.getSaveFileName(
             dialog, "Export CSV", os.path.basename(file_path), "CSV Files (*.csv)"
         )
         if save_path:
-            shutil.copy(file_path, save_path)
+            shutil.copy(file_path, save_path) # Copy CSV to user-specified filepath
             QMessageBox.information(dialog, "Exported", f"Saved to:\n{save_path}")
 
+    # Call export / close functions when buttons clicked
     export_btn.clicked.connect(export_csv)
     close_btn.clicked.connect(dialog.close)
 
+    # Add button widgets & align position
     btn_row.addWidget(export_btn)
     btn_row.addWidget(close_btn)
     btn_row.setAlignment(Qt.AlignCenter)

@@ -759,11 +759,12 @@ def process_video(file_path, loaded_models):
                 config = item["config"]
                 model  = item["model"]
 
+                # Track individual detected elements
                 track_results = model.track(
                     source=frame,
                     conf=config["conf"],
                     persist=True,
-                    tracker="bytetrack.yaml",
+                    tracker="bytetrack.yaml", # Ultralystics library feature -> keep same ID for same object across frames
                     save=False,
                     verbose=False,
                 )
