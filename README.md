@@ -268,3 +268,303 @@ The project setup currently includes:
 * Git confirmed that `.venv` is not being tracked
 
 This means the basic Python and YOLO environment setup is ready.
+
+# Custom Roadway Element Training Guide
+
+This guide is for training a custom **object detection** model for one roadway element, such as:
+
+- pole
+- traffic light
+- traffic sign
+- tree
+
+## Important
+This workflow is for **object detection only**.
+
+It works best for objects that can be boxed with bounding boxes.
+
+Examples:
+- poles
+- signs
+- traffic lights
+- trees
+
+Some elements like:
+- footpaths
+- lanes
+- bike lanes
+
+may need **segmentation** instead of object detection.
+
+---
+
+## 1. Folder structure
+
+Create this structure in the repo:
+
+```text
+datasets/
+  element_name/
+    images/
+      train/
+      val/
+    labels/
+      train/
+      val/
+    element_name.yaml
+
+models/
+  yolov8n.pt
+  element_name_best.pt
+
+scripts/
+  train_element.py
+  test_element.py
+````
+
+### Example for poles
+
+```text
+datasets/
+  pole/
+    images/
+      train/
+      val/
+    labels/
+      train/
+      val/
+    poles.yaml
+
+models/
+  yolov8n.pt
+  pole_best.pt
+```
+
+---
+
+## 2. Annotate in Roboflow
+
+1. Create a new project
+
+2. Choose **Object Detection**
+
+3. Create **one class** for your element
+   Example:
+
+   * `pole`
+   * `traffic_light`
+   * `sign`
+
+4. Upload your images
+
+5. Annotate all objects using bounding boxes
+
+6. Split the dataset into:
+
+   * train
+   * valid
+   * test
+
+Recommended split:
+
+* 80% train
+* 10% valid
+* 10% test
+
+---
+
+## 3. Export dataset
+
+Export the dataset in:
+
+* **YOLOv8**
+  or
+* **YOLO11**
+
+Then download and extract it.
+
+---
+## 4. Prepare the dataset inside the repo
+
+After exporting the dataset from Roboflow, use the preparation script to split and copy the dataset into the project structure.
+
+Expected Roboflow export structure:
+
+```text
+train/
+  images/
+  labels/
+
+Run the dataset preparation script:
+
+python scripts/prepare_detection_dataset.py (you can copy the ones on the root file to your own scripts file)
+
+Before running it, update these fields inside the script:
+
+ELEMENT_NAME
+SOURCE_IMAGES
+SOURCE_LABELS
+
+The script will automatically create and fill:
+
+datasets/<element_name>/images/train
+datasets/<element_name>/images/val
+datasets/<element_name>/labels/train
+datasets/<element_name>/labels/val
+
+This script is intended for object detection tasks only.
+
+---
+
+## 5. Create the YAML file
+
+### Example: `datasets/pole/poles.yaml`
+
+```yaml id="z4e1aa"
+path: datasets/pole
+train: images/train
+val: images/val
+
+names:
+  0: pole
+```
+
+Change the class name if your element is different.
+
+---
+
+## 6. Train the model
+
+### Example: `scripts/train_element.py`
+
+```python id="l2gd1e"
+from ultralytics import YOLO
+
+def main():
+    model = YOLO("models/yolov8n.pt")
+
+    model.train(
+        data="datasets/pole/poles.yaml",
+        epochs=50,
+        imgsz=640
+    )
+
+if __name__ == "__main__":
+    main()
+```
+
+Run:
+
+```bash id="nuf1rt"
+source .venv/bin/activate
+python scripts/train_element.py
+```
+
+---
+
+## 7. Save the best model
+
+After training, YOLO will create a folder inside:
+
+```text
+runs/detect/
+```
+
+The important file is usually:
+
+```text
+runs/detect/trainX/weights/best.pt
+```
+
+Copy it into `models/`.
+
+### Example for poles
+
+```bash id="5y9diz"
+cp runs/detect/trainX/weights/best.pt models/pole_best.pt
+```
+
+Replace `trainX` with the actual folder name, such as:
+
+* `train`
+* `train2`
+* `train3`
+
+---
+
+## 8. Test the model
+
+### Example: `scripts/test_element.py`
+
+```python id="hgz7li"
+from ultralytics import YOLO
+
+def main():
+    model = YOLO("models/pole_best.pt")
+
+    results = model(
+        "datasets/pole/images/val",
+        save=True
+    )
+
+    print("Testing complete")
+
+if __name__ == "__main__":
+    main()
+```
+
+Run:
+
+```bash id="8r1ca6"
+python scripts/test_element.py
+```
+
+Check the saved output images in `runs/detect/`.
+
+---
+
+## 9. Standalone inference file
+
+If needed, create a standalone file like:
+
+* `detect_pole.py`
+* `detect_sign.py`
+* `detect_traffic_light.py`
+
+This file should:
+
+* load the trained model
+* run on image or video
+* save the annotated result
+
+---
+
+## 10. Can multiple models be used in one app?
+
+Yes.
+
+The system can use multiple separate trained models, for example:
+
+* `pole_best.pt`
+* `traffic_light_best.pt`
+* `sign_best.pt`
+
+The app can run them one by one on the same uploaded video and combine all detections into one final output.
+
+However, separate `.pt` files cannot be automatically merged into one model without retraining.
+
+---
+
+## 11. Files that should usually be shared
+
+Minimum useful files:
+
+* trained model
+  Example: `models/pole_best.pt`
+* inference file
+  Example: `detect_pole.py`
+
+Training scripts and YAML files are useful, but not strictly required just for running inference.
+
+
+

@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import timedelta
 import sys
 import shutil
 import cv2
@@ -6,6 +7,15 @@ import numpy as np
 import csv
 from ultralytics import YOLO
 
+try:
+    from gps_from_mov import extract_mov_gps_points
+except Exception:
+    extract_mov_gps_points = None
+
+try:
+    from video_convert import convert_mov_to_mp4
+except Exception:
+    convert_mov_to_mp4 = None
 
 
 # =========================
@@ -18,6 +28,7 @@ INPUT_DIR = ROOT / "uploads"
 OUTPUT_DIR = ROOT / "results"
 REPORT_DIR = ROOT / "reports"
 PROCESSED_DIR = INPUT_DIR / "processed"
+CONVERTED_DIR = INPUT_DIR / "converted"
 
 FOOTPATH_MODEL = ROOT / "models" / "footpath_best.pt"
 ROAD_MODEL = ROOT / "models" / "road_evidence_best.pt"
@@ -259,25 +270,75 @@ MODEL_CONFIGS = [
 # Helper functions
 # =========================
 
-def save_report_csv(file_path, counts):
+def save_report_csv_by_stem(report_stem, counts):
     """
-    Save detection counts into reports folder.
-    """
+    Save normal summary report.
 
-    report_folder = REPORT_DIR / file_path.stem
+    This keeps the existing UI working because the report still uses:
+    Class, Count
+    """
+    report_folder = REPORT_DIR / report_stem
     report_folder.mkdir(parents=True, exist_ok=True)
 
     csv_path = report_folder / "detection_report.csv"
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-
         writer.writerow(["Class", "Count"])
 
         for label, count in counts.items():
             writer.writerow([label, count])
 
     print(f"CSV report saved: {csv_path}")
+
+
+def save_report_csv(file_path, counts):
+    """
+    Original function kept for image processing compatibility.
+    """
+    save_report_csv_by_stem(file_path.stem, counts)
+
+
+def save_detection_details_csv(report_stem, rows):
+    """
+    Save detailed object-level detection rows.
+
+    This is the useful GPS/geospatial output file.
+    One row = one unique tracked object.
+    """
+    report_folder = REPORT_DIR / report_stem
+    report_folder.mkdir(parents=True, exist_ok=True)
+
+    csv_path = report_folder / "detection_details_with_gps.csv"
+
+    fieldnames = [
+        "source_file",
+        "processed_file",
+        "object_id",
+        "class_name",
+        "track_id",
+        "first_frame_index",
+        "first_frame_time_sec",
+        "gps_time",
+        "camera_lat",
+        "camera_lon",
+        "camera_ele",
+        "camera_speed",
+        "camera_track",
+        "confidence",
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+        "side_of_frame",
+    ]
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"Detection details CSV saved: {csv_path}")
 
 def normalize_label_name(label):
     """
@@ -712,18 +773,144 @@ def process_image(file_path, loaded_models):
 
     return True
 
+def frame_side(x1, x2, frame_width):
+    """
+    Simple estimate of where the object appears in the frame.
+    This does not calculate real-world object position.
+    It only says whether the object is visually left, center, or right.
+    """
+    center_x = (x1 + x2) / 2
 
-def process_video(file_path, loaded_models):
+    if center_x < frame_width / 3:
+        return "left"
+    elif center_x < 2 * frame_width / 3:
+        return "center"
+    else:
+        return "right"
+
+
+def find_closest_gps_point(target_time, gps_points):
+    """
+    Match a video frame time to the closest GPS timestamp.
+    """
+    if not gps_points:
+        return None
+
+    return min(
+        gps_points,
+        key=lambda p: abs((p["time"] - target_time).total_seconds())
+    )
+
+
+def get_gps_for_frame(frame_index, fps, gps_points):
+    """
+    Convert frame number into video time, then match to GPS.
+    """
+    if not gps_points:
+        return None, None
+
+    video_start_time = gps_points[0]["time"]
+    frame_time_sec = frame_index / fps
+    frame_absolute_time = video_start_time + timedelta(seconds=frame_time_sec)
+
+    gps_point = find_closest_gps_point(frame_absolute_time, gps_points)
+
+    return gps_point, frame_time_sec
+
+
+def try_extract_gps_from_mov(file_path):
+    """
+    Try to extract GPS from MOV.
+
+    If it fails, do not crash the whole detection.
+    The system can still run normal detection without GPS.
+    """
+    if extract_mov_gps_points is None:
+        print("GPS extraction module not available. Skipping GPS.")
+        return []
+
+    try:
+        gps_points = extract_mov_gps_points(file_path)
+        print(f"Loaded {len(gps_points)} GPS points from MOV.")
+        return gps_points
+    except Exception as e:
+        print(f"GPS extraction failed. Continuing without GPS. Reason: {e}")
+        return []
+
+
+def try_convert_mov_for_processing(file_path):
+    """
+    Convert MOV into clean MP4 for OpenCV.
+
+    If conversion fails, fall back to the original file.
+    """
+    if convert_mov_to_mp4 is None:
+        print("MOV converter module not available. Trying original MOV.")
+        return file_path
+
+    try:
+        CONVERTED_DIR.mkdir(parents=True, exist_ok=True)
+
+        clean_path = CONVERTED_DIR / f"{file_path.stem}_clean.mp4"
+
+        convert_mov_to_mp4(
+            str(file_path),
+            str(clean_path)
+        )
+
+        print(f"MOV converted for processing: {clean_path}")
+        return clean_path
+
+    except Exception as e:
+        print(f"MOV conversion failed. Trying original MOV. Reason: {e}")
+        return file_path
+
+
+def get_video_output_path(output_stem):
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    return OUTPUT_DIR / f"detected_{output_stem}.mp4"
+
+def process_video(
+    file_path,
+    loaded_models,
+    gps_points=None,
+    source_file_path=None,
+    output_stem=None
+):
+    """
+    Process one video file.
+
+    Supports:
+    - normal MP4/AVI/MKV detection
+    - MOV detection with optional GPS
+    - object-level GPS CSV output
+    """
+    file_path = Path(file_path)
+
+    if gps_points is None:
+        gps_points = []
+
+    if source_file_path is None:
+        source_file_path = file_path
+    else:
+        source_file_path = Path(source_file_path)
+
+    if output_stem is None:
+        output_stem = source_file_path.stem
+
     cap = cv2.VideoCapture(str(file_path))
+
     if not cap.isOpened():
         print(f"Cannot open video: {file_path}")
         return False
 
     fps = cap.get(cv2.CAP_PROP_FPS)
+
     if fps <= 0:
         fps = 25
 
-    output_path = get_output_path(file_path)
+    output_path = get_video_output_path(output_stem)
+
     writer = cv2.VideoWriter(
         str(output_path),
         cv2.VideoWriter_fourcc(*"mp4v"),
@@ -742,11 +929,15 @@ def process_video(file_path, loaded_models):
     # (display_label, track_id) -> snapshot frame captured on first detection
     first_seen_frames = {}
 
+    # One row per unique object
+    detail_rows = []
+
     frame_count = 0
     last_result_frame = None
 
     while True:
         ret, frame = cap.read()
+
         if not ret:
             break
 
@@ -755,9 +946,18 @@ def process_video(file_path, loaded_models):
         if frame_count % SKIP_FRAMES == 0 or last_result_frame is None:
             result_frame = frame.copy()
 
+            gps_point, frame_time_sec = get_gps_for_frame(
+                frame_index=frame_count,
+                fps=fps,
+                gps_points=gps_points
+            )
+
+            if frame_time_sec is None:
+                frame_time_sec = frame_count / fps
+
             for item in loaded_models:
                 config = item["config"]
-                model  = item["model"]
+                model = item["model"]
 
                 # Track individual detected elements
                 track_results = model.track(
@@ -786,24 +986,26 @@ def process_video(file_path, loaded_models):
                 )
 
                 boxes = result.boxes
+
                 if boxes is None or boxes.id is None:
                     continue
 
                 track_ids = boxes.id.cpu().numpy().astype(int)
                 class_ids = boxes.cls.cpu().numpy().astype(int)
-                confs     = boxes.conf.cpu().numpy()
+                confs = boxes.conf.cpu().numpy()
 
-                allowed    = normalize_label_set(config["allowed_labels"])
+                allowed = normalize_label_set(config["allowed_labels"])
                 class_conf = normalize_conf_dict(config["class_conf"])
 
                 for i, track_id in enumerate(track_ids):
                     track_id = int(track_id)
 
                     label = get_label_name(result, class_ids[i])
-                    conf  = float(confs[i])
+                    conf = float(confs[i])
 
                     if allowed is not None and label not in allowed:
                         continue
+
                     if not should_keep_detection(label, conf, class_conf):
                         continue
 
@@ -816,13 +1018,36 @@ def process_video(file_path, loaded_models):
                     if display_label not in seen_ids:
                         seen_ids[display_label] = set()
 
-                    # Check BEFORE adding so we can capture the first frame
                     is_new = track_id not in seen_ids[display_label]
                     seen_ids[display_label].add(track_id)
 
                     if is_new:
                         obj_key = (display_label, track_id)
                         first_seen_frames[obj_key] = frame.copy()
+
+                        x1, y1, x2, y2 = map(int, boxes.xyxy[i].tolist())
+
+                        detail_rows.append({
+                            "source_file": source_file_path.name,
+                            "processed_file": file_path.name,
+                            "object_id": f"{display_label}_{track_id}",
+                            "class_name": display_label,
+                            "track_id": track_id,
+                            "first_frame_index": frame_count,
+                            "first_frame_time_sec": round(frame_time_sec, 3),
+                            "gps_time": gps_point["time"].isoformat() if gps_point else "",
+                            "camera_lat": gps_point["latitude"] if gps_point else "",
+                            "camera_lon": gps_point["longitude"] if gps_point else "",
+                            "camera_ele": gps_point["elevation"] if gps_point else "",
+                            "camera_speed": gps_point["speed"] if gps_point else "",
+                            "camera_track": gps_point["track"] if gps_point else "",
+                            "confidence": round(conf, 4),
+                            "x1": x1,
+                            "y1": y1,
+                            "x2": x2,
+                            "y2": y2,
+                            "side_of_frame": frame_side(x1, x2, VIDEO_SIZE[0]),
+                        })
 
             last_result_frame = result_frame
 
@@ -832,29 +1057,36 @@ def process_video(file_path, loaded_models):
         if frame_count % 30 == 0:
             print(f"Frames processed: {frame_count}")
 
-    # Release handles before doing anything else
     cap.release()
     writer.release()
 
-    # Save first-seen snapshots for verification
-    snapshot_dir = REPORT_DIR / file_path.stem / "snapshots"
+    snapshot_dir = REPORT_DIR / output_stem / "snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
     for (label, tid), snap_frame in first_seen_frames.items():
         snap_path = snapshot_dir / f"{label}_id{tid}.jpg"
         cv2.imwrite(str(snap_path), snap_frame)
 
-    print(f"Snapshots saved to: {snapshot_dir}")
+    total_counts = {
+        label: len(ids)
+        for label, ids in seen_ids.items()
+    }
 
-    # Convert seen ID sets to final counts
-    total_counts = {label: len(ids) for label, ids in seen_ids.items()}
-
-    print(f"Video: {file_path.name}")
+    print(f"Video: {source_file_path.name}")
+    print(f"Processed video file: {file_path.name}")
     print(f"Frames processed: {frame_count}")
     print_counts("Unique detections:", total_counts)
     print(f"Output: {output_path}")
+    print(f"Snapshots saved to: {snapshot_dir}")
 
-    save_report_csv(file_path, total_counts)
+    if gps_points:
+        print(f"GPS used: yes, {len(gps_points)} points")
+    else:
+        print("GPS used: no")
+
+    save_report_csv_by_stem(output_stem, total_counts)
+    save_detection_details_csv(output_stem, detail_rows)
+
     return True
 
 
@@ -880,6 +1112,12 @@ def move_to_processed(file_path):
 def run_detection(input_path, move_original=False):
     """
     Process one image or video.
+
+    For MOV:
+    - extract GPS from the original MOV
+    - convert MOV to clean MP4
+    - run detection on the clean MP4
+    - save outputs using the original MOV filename stem
     """
     input_path = Path(input_path)
 
@@ -898,8 +1136,24 @@ def run_detection(input_path, move_original=False):
 
     if suffix in IMAGE_EXTS:
         success = process_image(input_path, loaded_models)
+
     else:
-        success = process_video(input_path, loaded_models)
+        gps_points = []
+        process_video_path = input_path
+        source_file_path = input_path
+        output_stem = input_path.stem
+
+        if suffix == ".mov":
+            gps_points = try_extract_gps_from_mov(input_path)
+            process_video_path = try_convert_mov_for_processing(input_path)
+
+        success = process_video(
+            file_path=process_video_path,
+            loaded_models=loaded_models,
+            gps_points=gps_points,
+            source_file_path=source_file_path,
+            output_stem=output_stem
+        )
 
     if success and move_original:
         move_to_processed(input_path)
