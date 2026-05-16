@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QSlider
 )
 from PySide6.QtGui import QFont, QPixmap
-from PySide6.QtCore import Qt, QThread, Signal, QUrl
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QStandardPaths
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QVideoWidget
 
@@ -12,7 +12,7 @@ import sys
 import os
 import shutil
 import subprocess
-
+import platform
 
 # =========================
 # Basic paths
@@ -155,18 +155,50 @@ def upload_image():
 
         run_detection(dest_path)
 
+def get_video_sidebar_locations():
+    locations = []
+
+    home = os.path.expanduser("~")
+    if os.path.exists(home):
+        locations.append(QUrl.fromLocalFile(home))
+
+    # Windows normal Python
+    if platform.system() == "Windows":
+        for drive in ["C:/", "D:/", "E:/"]:
+            if os.path.exists(drive):
+                locations.append(QUrl.fromLocalFile(drive))
+
+    # WSL / Linux access to Windows drives
+    for drive in ["/mnt/c", "/mnt/d", "/mnt/e"]:
+        if os.path.exists(drive):
+            locations.append(QUrl.fromLocalFile(drive))
+
+    # macOS common folders
+    for folder in [
+        os.path.expanduser("~/Movies"),
+        os.path.expanduser("~/Downloads"),
+        os.path.expanduser("~/Documents"),
+        os.path.expanduser("~/Desktop"),
+    ]:
+        if os.path.exists(folder):
+            locations.append(QUrl.fromLocalFile(folder))
+
+    return locations
 
 def upload_video():
-    start_dir = os.path.abspath(INPUT_FOLDER)
+    dialog = QFileDialog(window)
+    dialog.setWindowTitle("Select Video")
+    dialog.setFileMode(QFileDialog.ExistingFile)
+    dialog.setNameFilter("Videos (*.mp4 *.avi *.mov *.MOV *.mkv *.MKV);;All Files (*)")
 
-    file_path, _ = QFileDialog.getOpenFileName(
-        window,
-        "Select Video",
-        start_dir,
-        "Videos (*.mp4 *.avi *.mov *.MOV *.mkv *.MKV)"
-    )
+    start_dir = os.path.expanduser("~")
+    dialog.setDirectory(start_dir)
 
-    if file_path:
+    dialog.setSidebarUrls(get_video_sidebar_locations())
+
+    if dialog.exec():
+        file_path = dialog.selectedFiles()[0]
+
         dest_path, status = copy_to_uploads(file_path)
 
         if status == "copied":
