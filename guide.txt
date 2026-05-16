@@ -7,6 +7,7 @@ STEP 1 — Install dependencies
   pip install PySide6
   pip install opencv-python
   pip install ultralytics
+  pip install gpmf - for GPS
 
 Windows (WSL Ubutuntu) only (for button emoji rendering in the UI):
   sudo apt install fonts-noto-color-emoji

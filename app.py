@@ -29,24 +29,33 @@ class VideoDetectionThread(QThread):
 
     def __init__(self, input_path, output_path):
         super().__init__()
-        self.input_path = input_path
+        self.input_path  = input_path
         self.output_path = output_path
 
     def run(self):
-        import detect  
-        model = detect.model
+        import detect
 
-        cap = cv2.VideoCapture(self.input_path)
+        # Fix MP4 structure if needed
+        input_path = self.input_path
+        cap_test   = cv2.VideoCapture(input_path)
+        fps_test   = cap_test.get(cv2.CAP_PROP_FPS)
+        cap_test.release()
+
+        if fps_test <= 0:
+            print("[Thread] ⚠️ FPS unreadable — attempting MP4 fix...")
+            input_path = detect.fix_mp4(input_path)
+
+        # Use fixed path from here on — NOT self.input_path
+        cap          = cv2.VideoCapture(input_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps          = cap.get(cv2.CAP_PROP_FPS)
+        width        = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height       = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         out = cv2.VideoWriter(
             self.output_path,
             cv2.VideoWriter_fourcc(*'mp4v'),
-            fps,
-            (width, height)
+            fps, (width, height)
         )
 
         frame_count = 0
@@ -54,7 +63,6 @@ class VideoDetectionThread(QThread):
             ret, frame = cap.read()
             if not ret:
                 break
-
             frame = detect._run_models_on_frame(frame)
             out.write(frame)
             frame_count += 1
@@ -62,12 +70,20 @@ class VideoDetectionThread(QThread):
 
         cap.release()
         out.release()
+
+        # Generate report using fixed path
+        detect.generate_report(input_path, REPORT_FOLDER, is_video=True)
+
+        # Clean up fixed file if one was created
+        if input_path.endswith("_fixed.mp4") and os.path.exists(input_path):
+            os.remove(input_path)
+            print(f"[Fix] Cleaned up temporary fixed file")
+
         self.finished.emit(self.output_path)
 
 # Image Detection
 def detect_image(image_path):
     import detect
-    model = detect.model
 
     processing_label.setText("Processing...")
     QApplication.processEvents()
@@ -79,14 +95,19 @@ def detect_image(image_path):
         progress_bar.setValue(0)
         return
 
+    # Annotate and save result
     img = detect._run_models_on_frame(img)
-
     result_path = os.path.join(RESULT_FOLDER, os.path.basename(image_path))
     cv2.imwrite(result_path, img)
+
+    # Generate report
+    detect.generate_report(image_path, REPORT_FOLDER, is_video=False)
+
     progress_bar.setValue(100)
     processing_label.setText("")
-    progress_bar.setValue(0) 
-    QMessageBox.information(window, "Result Saved", f"Image result saved to {result_path}")
+    progress_bar.setValue(0)
+    QMessageBox.information(window, "Result Saved",
+        f"Image result saved to {result_path}\nReport saved to {REPORT_FOLDER}/")
 
 # Video Detection
 def detect_video(video_path):
@@ -374,7 +395,9 @@ def clear_uploads():
 def clear_results():
     for f in os.listdir(RESULT_FOLDER):
         os.remove(os.path.join(RESULT_FOLDER, f))
-    QMessageBox.information(window, "Results Cleared", "All files in results folder have been deleted.")
+    for f in os.listdir(REPORT_FOLDER):
+        os.remove(os.path.join(REPORT_FOLDER, f))
+    QMessageBox.information(window, "Results Cleared", "All files in results and reports folders have been deleted.")
 
 #User Guide
 def show_user_guide():
