@@ -22,31 +22,40 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 os.makedirs(REPORT_FOLDER, exist_ok=True) 
 
-#Video detection thread
+#Video detection 
 class VideoDetectionThread(QThread):
     progress = Signal(int)
     finished = Signal(str)
 
     def __init__(self, input_path, output_path):
         super().__init__()
-        self.input_path = input_path
+        self.input_path  = input_path
         self.output_path = output_path
 
     def run(self):
-        import detect  
-        model = detect.model
+        import detect
 
-        cap = cv2.VideoCapture(self.input_path)
+        # Fix MP4 structure if needed
+        input_path = self.input_path
+        cap_test   = cv2.VideoCapture(input_path)
+        fps_test   = cap_test.get(cv2.CAP_PROP_FPS)
+        cap_test.release()
+
+        if fps_test <= 0:
+            print("[Thread] ⚠️ FPS unreadable — attempting MP4 fix...")
+            input_path = detect.fix_mp4(input_path)
+
+        # Use fixed path from here on — NOT self.input_path
+        cap          = cv2.VideoCapture(input_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps          = cap.get(cv2.CAP_PROP_FPS)
+        width        = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height       = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         out = cv2.VideoWriter(
             self.output_path,
             cv2.VideoWriter_fourcc(*'mp4v'),
-            fps,
-            (width, height)
+            fps, (width, height)
         )
 
         frame_count = 0
@@ -54,31 +63,27 @@ class VideoDetectionThread(QThread):
             ret, frame = cap.read()
             if not ret:
                 break
-
-            results = model(frame)
-
-            for r in results:
-                for box in r.boxes:
-                    cls = int(box.cls[0])
-                    label = model.names[cls]
-                    if label.lower() == "traffic light":
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-                        cv2.putText(frame, label, (x1, y1-10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
-
+            frame = detect._run_models_on_frame(frame)
             out.write(frame)
             frame_count += 1
             self.progress.emit(int((frame_count / total_frames) * 100))
 
         cap.release()
         out.release()
+
+        # Generate report using fixed path
+        detect.generate_report(input_path, REPORT_FOLDER, is_video=True)
+
+        # Clean up fixed file if one was created
+        if input_path.endswith("_fixed.mp4") and os.path.exists(input_path):
+            os.remove(input_path)
+            print(f"[Fix] Cleaned up temporary fixed file")
+
         self.finished.emit(self.output_path)
 
-#Detection functions
+# Image Detection
 def detect_image(image_path):
     import detect
-    model = detect.model
 
     processing_label.setText("Processing...")
     QApplication.processEvents()
@@ -90,24 +95,21 @@ def detect_image(image_path):
         progress_bar.setValue(0)
         return
 
-    results = model(img)
-    for r in results:
-        for box in r.boxes:
-            cls = int(box.cls[0])
-            label = model.names[cls]
-            if label.lower() == "traffic light":
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0,255,0), 2)
-                cv2.putText(img, label, (x1, y1-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
-
+    # Annotate and save result
+    img = detect._run_models_on_frame(img)
     result_path = os.path.join(RESULT_FOLDER, os.path.basename(image_path))
     cv2.imwrite(result_path, img)
+
+    # Generate report
+    detect.generate_report(image_path, REPORT_FOLDER, is_video=False)
+
     progress_bar.setValue(100)
     processing_label.setText("")
-    progress_bar.setValue(0) 
-    QMessageBox.information(window, "Result Saved", f"Image result saved to {result_path}")
+    progress_bar.setValue(0)
+    QMessageBox.information(window, "Result Saved",
+        f"Image result saved to {result_path}\nReport saved to {REPORT_FOLDER}/")
 
+# Video Detection
 def detect_video(video_path):
     result_path = os.path.join(RESULT_FOLDER, os.path.basename(video_path))
     global thread
@@ -226,6 +228,9 @@ def show_text_preview(file_path, title="File Preview"):
     dialog.exec()
 
 def show_video_preview(file_path, title="Video Preview"):
+    from PySide6.QtWidgets import QSlider
+    from PySide6.QtCore import QTimer
+
     dialog = QDialog(window)
     dialog.setWindowTitle(title)
     dialog.resize(900, 650)
@@ -235,9 +240,40 @@ def show_video_preview(file_path, title="Video Preview"):
     video_widget = QVideoWidget()
     layout.addWidget(video_widget)
 
-    controls = QHBoxLayout()
+    # ── Seek slider ──────────────────────────────────────────
+    seek_slider = QSlider(Qt.Horizontal)
+    seek_slider.setRange(0, 0)        # range updated once video loads
+    seek_slider.setStyleSheet("""
+        QSlider::groove:horizontal {
+            height: 6px;
+            background: #cccccc;
+            border-radius: 3px;
+        }
+        QSlider::handle:horizontal {
+            background: white;
+            border: 1px solid #999;
+            width: 14px;
+            height: 14px;
+            margin: -4px 0;
+            border-radius: 7px;
+        }
+        QSlider::sub-page:horizontal {
+            background: #4a90d9;
+            border-radius: 3px;
+        }
+    """)
+    layout.addWidget(seek_slider)
 
-    play_btn = QPushButton("Play")
+    # ── Time label ───────────────────────────────────────────
+    time_label = QLabel("0:00 / 0:00")
+    time_label.setAlignment(Qt.AlignCenter)
+    time_label.setStyleSheet("color: black; font-size: 12px;")
+    layout.addWidget(time_label)
+    layout.setStretchFactor(video_widget, 1)
+
+    # ── Control buttons ──────────────────────────────────────
+    controls = QHBoxLayout()
+    play_btn  = QPushButton("Play")
     pause_btn = QPushButton("Pause")
     close_btn = QPushButton("Close")
 
@@ -252,19 +288,62 @@ def show_video_preview(file_path, title="Video Preview"):
     controls.addWidget(pause_btn)
     controls.addWidget(close_btn)
     controls.setAlignment(Qt.AlignCenter)
-
     layout.addLayout(controls)
 
-    player = QMediaPlayer(dialog)
+    # ── Media player setup ───────────────────────────────────
+    player       = QMediaPlayer(dialog)
     audio_output = QAudioOutput(dialog)
-
     player.setAudioOutput(audio_output)
     player.setVideoOutput(video_widget)
     player.setSource(QUrl.fromLocalFile(os.path.abspath(file_path)))
 
-    # Keep references alive
-    dialog.player = player
+    # Keep references alive so Python doesn't garbage collect them
+    dialog.player       = player
     dialog.audio_output = audio_output
+
+    # ── Helper: format milliseconds → "m:ss" ─────────────────
+    def ms_to_str(ms):
+        if ms < 0:
+            return "0:00"
+        total_seconds = ms // 1000
+        minutes       = total_seconds // 60
+        seconds       = total_seconds % 60
+        return f"{minutes}:{seconds:02d}"
+
+    # ── Update slider + time label as video plays ─────────────
+    # is_seeking flag prevents a feedback loop where updating
+    # the slider position triggers another seek
+    is_seeking = [False]
+
+    def on_position_changed(position):
+        if not is_seeking[0]:
+            seek_slider.setValue(position)
+        duration = player.duration()
+        time_label.setText(f"{ms_to_str(position)} / {ms_to_str(duration)}")
+
+    def on_duration_changed(duration):
+        seek_slider.setRange(0, duration)
+
+    # ── Seek when user moves the slider ──────────────────────
+    def on_slider_pressed():
+        is_seeking[0] = True
+
+    def on_slider_released():
+        player.setPosition(seek_slider.value())
+        is_seeking[0] = False
+
+    def on_slider_moved(position):
+        # Update time label while dragging even before releasing
+        duration = player.duration()
+        time_label.setText(f"{ms_to_str(position)} / {ms_to_str(duration)}")
+
+    # ── Connect everything ────────────────────────────────────
+    player.positionChanged.connect(on_position_changed)
+    player.durationChanged.connect(on_duration_changed)
+
+    seek_slider.sliderPressed.connect(on_slider_pressed)
+    seek_slider.sliderReleased.connect(on_slider_released)
+    seek_slider.sliderMoved.connect(on_slider_moved)
 
     play_btn.clicked.connect(player.play)
     pause_btn.clicked.connect(player.pause)
@@ -316,7 +395,9 @@ def clear_uploads():
 def clear_results():
     for f in os.listdir(RESULT_FOLDER):
         os.remove(os.path.join(RESULT_FOLDER, f))
-    QMessageBox.information(window, "Results Cleared", "All files in results folder have been deleted.")
+    for f in os.listdir(REPORT_FOLDER):
+        os.remove(os.path.join(REPORT_FOLDER, f))
+    QMessageBox.information(window, "Results Cleared", "All files in results and reports folders have been deleted.")
 
 #User Guide
 def show_user_guide():
@@ -348,12 +429,12 @@ def show_user_guide():
         "- Roadside barriers\n"
 
         "Instructions:\n"
-        "1. Store system somewhere in a folder.\n"
-        "2. When the system is first launched, it will automatically create three folders: 'uploads', 'results', and 'reports' if you don't have one.\n"
-        "3. The image button is used for uploading an image file for analysis, image file type include *.jpg, *.png, *.jpeg.\n"
-        "4. The video button is used for uploading a video file for analysis, video file type include *.mp4, *.avi, *.mov.\n"
-        "5. All uploaded files will be saved in the 'uploads' folder, you can click the view uploads button to open the folder\n"
-        "6. After analysis, the output annotated images or video files will be saved in the 'results' folder, you can click the view results button to open the folder\n"
+        "1. Store the system somewhere in a folder.\n"
+        "2. When the system is first launched, it will automatically create three folders: 'uploads', 'results', and 'reports' if you do not already have one.\n"
+        "3. The image button is used for uploading an image file for analysis, acceptable image file types include *.jpg, *.png, *.jpeg.\n"
+        "4. The video button is used for uploading a video file for analysis, acceptable video file types include *.mp4, *.avi, *.mov.\n"
+        "5. All uploaded files will be saved in the 'uploads' folder, you can click the view uploads button to view the folder\n"
+        "6. After analysis, the output annotated images or video files will be saved in the 'results' folder, you can click the view results button to view the folder\n"
         "7. The view reports button is used to open the 'reports' folder, where you can find the generated report files.\n"
         "8. Clear uploads and clear results buttons are used to clear the files in the 'uploads' and 'results' folders respectively.\n"
     )
@@ -371,6 +452,7 @@ app = QApplication(sys.argv)
 
 EDGE_MARGIN = 8
 class MainWindow(QWidget):
+    # Make background responsive according to window size
     def resizeEvent(self, event):
         super().resizeEvent(event)
         background.setGeometry(0, 0, self.width(), self.height())

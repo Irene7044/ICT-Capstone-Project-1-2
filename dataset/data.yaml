@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['fences', 'road barriers']
+
+roboflow:
+  workspace: blake-cross
+  project: blake-cross
+  version: dataset
+  license: Private
+  url: https://app.roboflow.com/blake-cross/blake-cross/dataset
