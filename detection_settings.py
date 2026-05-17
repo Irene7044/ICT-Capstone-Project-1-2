@@ -3,8 +3,8 @@ detection_settings.py  –  RoadSight Detection Control Panel
 ============================================================
 A PySide6 dialog that lets the user:
   • Enable / disable individual CV models before running detection
-  • Adjust mask opacity (alpha) per model with a live slider
-  • Adjust bounding-box / contour opacity per model
+  • Adjust mask / overlay opacity (alpha) per model with a live slider
+  • Adjust label text size (font scale) per model with a live slider
 
 Settings are written to  <BASE_DIR>/detection_settings.json
 detect.py reads that file at startup and overrides MODEL_CONFIGS accordingly.
@@ -12,7 +12,7 @@ detect.py reads that file at startup and overrides MODEL_CONFIGS accordingly.
 Usage (standalone test):
     python detection_settings.py
 
-Usage (integrated call from app.py):
+Usage (integrated – call from app.py):
     from detection_settings import show_detection_settings
     show_detection_settings(parent=window)
 """
@@ -48,74 +48,96 @@ SETTINGS_FILE = os.path.join(BASE_DIR, "detection_settings.json")
 # ---------------------------------------------------------------------------
 # Model metadata
 # Must stay in sync with MODEL_CONFIGS in detect.py
+#
+# default_font_scale maps to OpenCV's fontScale argument in cv2.putText().
+# The original put_label() in detect.py hardcodes 0.55.
+# Slider range: 0.20 (tiny) -> 1.50 (large), stored as float in JSON.
 # ---------------------------------------------------------------------------
+
+DEFAULT_FONT_SCALE = 0.55   # matches the hardcoded value in detect.py
 
 MODEL_META = [
     {
         "name": "footpath",
         "label": "Footpath",
         "description": "Sidewalk / footpath segmentation",
-        "color": "#00ff00",   # green  (BGR 0,255,0  → #00ff00)
+        "color": "#00ff00",
         "default_alpha": 0.40,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": True,
     },
     {
         "name": "road_evidence",
         "label": "Road Evidence",
         "description": "Crosswalk markings · Lane markings · Stop lines",
-        "color": "#ff0000",   # red (dominant lane_marking colour)
+        "color": "#ff0000",
         "default_alpha": 0.50,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": True,
     },
     {
         "name": "trunk",
         "label": "Tree Trunks",
         "description": "Tree trunk detection",
-        "color": "#ffa500",   # orange
+        "color": "#ffa500",
         "default_alpha": 0.45,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": True,
     },
     {
         "name": "pole",
         "label": "Poles",
         "description": "Street / utility pole detection",
-        "color": "#ff00ff",   # purple
+        "color": "#ff00ff",
         "default_alpha": 0.45,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": True,
     },
     {
         "name": "traffic_light",
         "label": "Traffic Lights",
         "description": "Traffic light bounding-box detection",
-        "color": "#ffff00",   # cyan in BGR = yellow in RGB display
+        "color": "#ffff00",
         "default_alpha": 0.45,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": False,
     },
     {
         "name": "road_barrier",
         "label": "Road Barriers",
         "description": "Road barrier / fence detection",
-        "color": "#0080ff",   # light blue
+        "color": "#0080ff",
         "default_alpha": 0.45,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": True,
     },
     {
         "name": "bike_lane",
         "label": "Bike Lanes",
         "description": "Dedicated bicycle lane segmentation",
-        "color": "#8000ff",   # violet
+        "color": "#8000ff",
         "default_alpha": 0.45,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": True,
     },
     {
         "name": "traffic_sign",
         "label": "Traffic Signs",
         "description": "Speed limits · Stop signs · Warnings · Parking etc.",
-        "color": "#ff8000",   # orange-like
+        "color": "#ff8000",
         "default_alpha": 0.45,
+        "default_font_scale": DEFAULT_FONT_SCALE,
         "has_mask": False,
     },
 ]
+
+# Slider integer range for font scale:
+#   slider value 20  -> font_scale 0.20  (tiny)
+#   slider value 55  -> font_scale 0.55  (default)
+#   slider value 150 -> font_scale 1.50  (large)
+FONT_SCALE_SLIDER_MIN = 20
+FONT_SCALE_SLIDER_MAX = 150
+FONT_SCALE_SLIDER_DEFAULT = int(round(DEFAULT_FONT_SCALE * 100))  # 55
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +150,11 @@ def load_settings() -> dict:
     Falls back to defaults if file is missing / corrupt.
     """
     defaults = {
-        m["name"]: {"enabled": True, "alpha": m["default_alpha"]}
+        m["name"]: {
+            "enabled": True,
+            "alpha": m["default_alpha"],
+            "font_scale": m["default_font_scale"],
+        }
         for m in MODEL_META
     }
 
@@ -139,14 +165,14 @@ def load_settings() -> dict:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
             saved = json.load(f)
 
-        # Merge: keep defaults for any model not yet in the file
+        # Merge: keep defaults for any model or key not yet in the file
         for name, vals in defaults.items():
             if name not in saved:
                 saved[name] = vals
             else:
-                # Ensure both keys exist
                 saved[name].setdefault("enabled", True)
                 saved[name].setdefault("alpha", vals["alpha"])
+                saved[name].setdefault("font_scale", vals["font_scale"])
 
         return saved
 
@@ -181,7 +207,7 @@ class ColorSwatch(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# Per-model row widget
+# Shared slider styles
 # ---------------------------------------------------------------------------
 
 SLIDER_STYLE = """
@@ -200,6 +226,33 @@ QSlider::handle:horizontal {
 }
 QSlider::sub-page:horizontal {
     background: #4a90d9;
+    border-radius: 3px;
+}
+QSlider::groove:horizontal:disabled {
+    background: #e0e0e0;
+}
+QSlider::handle:horizontal:disabled {
+    background: #cccccc;
+    border-color: #bbb;
+}
+"""
+
+FONT_SLIDER_STYLE = """
+QSlider::groove:horizontal {
+    height: 5px;
+    background: #cccccc;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    background: white;
+    border: 1px solid #888;
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+}
+QSlider::sub-page:horizontal {
+    background: #e07b39;
     border-radius: 3px;
 }
 QSlider::groove:horizontal:disabled {
@@ -233,8 +286,12 @@ QCheckBox::indicator:checked {
 """
 
 
+# ---------------------------------------------------------------------------
+# Per-model row widget
+# ---------------------------------------------------------------------------
+
 class ModelRow(QFrame):
-    """One row in the control panel for a single model."""
+    """One card in the control panel for a single model."""
 
     def __init__(self, meta: dict, settings: dict, parent=None):
         super().__init__(parent)
@@ -248,8 +305,10 @@ class ModelRow(QFrame):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 10, 14, 10)
-        outer.setSpacing(6)
+        outer.setContentsMargins(14, 10, 14, 12)
+        outer.setSpacing(7)
+
+        model_settings = settings.get(self.name, {})
 
         # ── Row 1: swatch + checkbox + description ────────────────────────
         top = QHBoxLayout()
@@ -260,7 +319,7 @@ class ModelRow(QFrame):
 
         self.checkbox = QCheckBox(meta["label"])
         self.checkbox.setStyleSheet(CHECKBOX_STYLE)
-        self.checkbox.setChecked(settings.get(self.name, {}).get("enabled", True))
+        self.checkbox.setChecked(model_settings.get("enabled", True))
         top.addWidget(self.checkbox)
 
         top.addStretch()
@@ -272,50 +331,115 @@ class ModelRow(QFrame):
 
         outer.addLayout(top)
 
-        # ── Row 2: opacity slider ─────────────────────────────────────────
-        slider_row = QHBoxLayout()
-        slider_row.setSpacing(10)
+        # ── Row 2: Opacity slider (blue track) ────────────────────────────
+        saved_alpha = model_settings.get("alpha", meta["default_alpha"])
 
-        lbl_mask = QLabel("Opacity:")
-        lbl_mask.setStyleSheet("color: #333; font-size: 11px; border: none;")
-        lbl_mask.setFixedWidth(56)
-        slider_row.addWidget(lbl_mask)
+        opacity_row = QHBoxLayout()
+        opacity_row.setSpacing(10)
+
+        lbl_opacity = QLabel("Opacity:")
+        lbl_opacity.setStyleSheet("color: #4a90d9; font-size: 11px; font-weight: bold; border: none;")
+        lbl_opacity.setFixedWidth(64)
+        opacity_row.addWidget(lbl_opacity)
 
         self.alpha_slider = QSlider(Qt.Horizontal)
         self.alpha_slider.setRange(0, 100)
-        saved_alpha = settings.get(self.name, {}).get("alpha", meta["default_alpha"])
         self.alpha_slider.setValue(int(round(saved_alpha * 100)))
         self.alpha_slider.setStyleSheet(SLIDER_STYLE)
         self.alpha_slider.setFixedHeight(22)
-        slider_row.addWidget(self.alpha_slider, stretch=1)
+        opacity_row.addWidget(self.alpha_slider, stretch=1)
 
         self.alpha_label = QLabel(f"{int(round(saved_alpha * 100))}%")
-        self.alpha_label.setFixedWidth(36)
+        self.alpha_label.setFixedWidth(38)
         self.alpha_label.setStyleSheet("color: #333; font-size: 11px; border: none;")
         self.alpha_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        slider_row.addWidget(self.alpha_label)
+        opacity_row.addWidget(self.alpha_label)
 
-        outer.addLayout(slider_row)
+        outer.addLayout(opacity_row)
+
+        # ── Row 3: Text size slider (orange track) ────────────────────────
+        saved_font_scale = model_settings.get("font_scale", meta["default_font_scale"])
+
+        text_row = QHBoxLayout()
+        text_row.setSpacing(10)
+
+        lbl_text = QLabel("Text size:")
+        lbl_text.setStyleSheet("color: #e07b39; font-size: 11px; font-weight: bold; border: none;")
+        lbl_text.setFixedWidth(64)
+        text_row.addWidget(lbl_text)
+
+        self.font_slider = QSlider(Qt.Horizontal)
+        self.font_slider.setRange(FONT_SCALE_SLIDER_MIN, FONT_SCALE_SLIDER_MAX)
+        self.font_slider.setValue(int(round(saved_font_scale * 100)))
+        self.font_slider.setStyleSheet(FONT_SLIDER_STYLE)
+        self.font_slider.setFixedHeight(22)
+        text_row.addWidget(self.font_slider, stretch=1)
+
+        # Live "Aa" preview — font size scales with the slider value
+        self.font_preview = QLabel()
+        self.font_preview.setFixedWidth(38)
+        self.font_preview.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.font_preview.setStyleSheet("border: none; color: #333;")
+        text_row.addWidget(self.font_preview)
+
+        outer.addLayout(text_row)
+
+        # ── Row 4: tick labels under text-size slider ─────────────────────
+        legend_row = QHBoxLayout()
+        legend_row.setContentsMargins(74, 0, 48, 0)   # align under the slider track
+        legend_row.setSpacing(0)
+
+        for txt, align in [("Tiny", Qt.AlignLeft), ("Default", Qt.AlignHCenter), ("Large", Qt.AlignRight)]:
+            lbl = QLabel(txt)
+            lbl.setStyleSheet("color: #bbb; font-size: 9px; border: none;")
+            lbl.setAlignment(align)
+            legend_row.addWidget(lbl, stretch=1)
+
+        outer.addLayout(legend_row)
 
         # ── Connections ───────────────────────────────────────────────────
         self.alpha_slider.valueChanged.connect(self._on_alpha_changed)
+        self.font_slider.valueChanged.connect(self._on_font_changed)
         self.checkbox.stateChanged.connect(self._on_toggle)
 
-        # Apply initial enabled/disabled state
+        # Initialise preview and enabled state
+        self._update_font_preview(self.font_slider.value())
         self._set_enabled_ui(self.checkbox.isChecked())
 
+    # ------------------------------------------------------------------
+    # Slot handlers
     # ------------------------------------------------------------------
 
     def _on_alpha_changed(self, value: int):
         self.alpha_label.setText(f"{value}%")
 
+    def _on_font_changed(self, value: int):
+        self._update_font_preview(value)
+
     def _on_toggle(self, state):
         self._set_enabled_ui(bool(state))
 
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _update_font_preview(self, slider_value: int):
+        """
+        Render 'Aa' at a Qt point size proportional to the chosen
+        OpenCV font scale so the user gets instant visual feedback.
+        Mapping: pt = clamp(slider_value * 0.18, 7, 22)
+        """
+        pt = max(7, min(22, int(round(slider_value * 0.18))))
+        self.font_preview.setFont(QFont("Arial", pt, QFont.Bold))
+        self.font_preview.setText("Aa")
+
     def _set_enabled_ui(self, enabled: bool):
-        self.alpha_slider.setEnabled(enabled)
-        self.alpha_label.setEnabled(enabled)
-        opacity = 1.0 if enabled else 0.45
+        for widget in (
+            self.alpha_slider, self.alpha_label,
+            self.font_slider, self.font_preview,
+        ):
+            widget.setEnabled(enabled)
+
         self.setStyleSheet(
             f"QFrame {{ background: {'white' if enabled else '#f5f5f5'}; "
             f"border-radius: 10px; border: 1px solid #dde3ed; }}"
@@ -327,6 +451,7 @@ class ModelRow(QFrame):
         return {
             "enabled": self.checkbox.isChecked(),
             "alpha": self.alpha_slider.value() / 100.0,
+            "font_scale": self.font_slider.value() / 100.0,
         }
 
 
@@ -366,7 +491,7 @@ class DetectionSettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Detection Settings")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(580)
         self.setStyleSheet(DIALOG_STYLE)
 
         self._settings = load_settings()
@@ -383,7 +508,7 @@ class DetectionSettingsDialog(QDialog):
         root.addWidget(header)
 
         sub = QLabel(
-            "Choose which models to run and adjust their overlay opacity.\n"
+            "Choose which models to run, adjust overlay opacity, and set label text size.\n"
             "Settings are saved and applied on the next detection run."
         )
         sub.setStyleSheet("color: #555; font-size: 12px;")
@@ -395,18 +520,18 @@ class DetectionSettingsDialog(QDialog):
         sep.setStyleSheet("color: #ccc;")
         root.addWidget(sep)
 
-        # ── Quick toggles ─────────────────────────────────────────────────
+        # ── Quick actions ─────────────────────────────────────────────────
         quick = QHBoxLayout()
         quick.setSpacing(8)
 
         enable_all_btn = QPushButton("Enable All")
         enable_all_btn.setFixedHeight(32)
-        enable_all_btn.clicked.connect(lambda: self._set_all(True))
+        enable_all_btn.clicked.connect(lambda: self._set_all_enabled(True))
         quick.addWidget(enable_all_btn)
 
         disable_all_btn = QPushButton("Disable All")
         disable_all_btn.setFixedHeight(32)
-        disable_all_btn.clicked.connect(lambda: self._set_all(False))
+        disable_all_btn.clicked.connect(lambda: self._set_all_enabled(False))
         quick.addWidget(disable_all_btn)
 
         reset_btn = QPushButton("Reset Defaults")
@@ -416,6 +541,16 @@ class DetectionSettingsDialog(QDialog):
 
         quick.addStretch()
         root.addLayout(quick)
+
+        # ── Colour legend for sliders ─────────────────────────────────────
+        legend = QHBoxLayout()
+        legend.setSpacing(16)
+        for color, label_text in [("#4a90d9", "■  Opacity"), ("#e07b39", "■  Text size")]:
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold;")
+            legend.addWidget(lbl)
+        legend.addStretch()
+        root.addLayout(legend)
 
         # ── Scrollable model list ─────────────────────────────────────────
         scroll_area = QScrollArea()
@@ -438,7 +573,7 @@ class DetectionSettingsDialog(QDialog):
         scroll_area.setWidget(scroll_widget)
         root.addWidget(scroll_area, stretch=1)
 
-        # ── Footer buttons ────────────────────────────────────────────────
+        # ── Footer ────────────────────────────────────────────────────────
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.HLine)
         sep2.setStyleSheet("color: #ccc;")
@@ -465,15 +600,15 @@ class DetectionSettingsDialog(QDialog):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _set_all(self, state: bool):
+    def _set_all_enabled(self, state: bool):
         for row in self._rows:
             row.checkbox.setChecked(state)
 
     def _reset_defaults(self):
         for row in self._rows:
-            default_alpha = row.meta["default_alpha"]
             row.checkbox.setChecked(True)
-            row.alpha_slider.setValue(int(round(default_alpha * 100)))
+            row.alpha_slider.setValue(int(round(row.meta["default_alpha"] * 100)))
+            row.font_slider.setValue(FONT_SCALE_SLIDER_DEFAULT)
 
     def _apply(self):
         new_settings = {row.name: row.get_values() for row in self._rows}
@@ -501,7 +636,7 @@ def show_detection_settings(parent=None) -> bool:
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     dlg = DetectionSettingsDialog()
-    dlg.resize(580, 680)
+    dlg.resize(600, 740)
     result = dlg.exec()
     print("Accepted:", result == QDialog.Accepted)
     if result == QDialog.Accepted:

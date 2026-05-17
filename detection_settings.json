@@ -1,34 +1,42 @@
 {
   "footpath": {
     "enabled": true,
-    "alpha": 0.1
+    "alpha": 0.1,
+    "font_scale": 1.5
   },
   "road_evidence": {
-    "enabled": true,
-    "alpha": 0.09
+    "enabled": false,
+    "alpha": 0.09,
+    "font_scale": 0.55
   },
   "trunk": {
-    "enabled": true,
-    "alpha": 0.08
+    "enabled": false,
+    "alpha": 0.08,
+    "font_scale": 0.55
   },
   "pole": {
     "enabled": true,
-    "alpha": 0.13
+    "alpha": 0.13,
+    "font_scale": 0.55
   },
   "traffic_light": {
-    "enabled": true,
-    "alpha": 0.1
+    "enabled": false,
+    "alpha": 0.1,
+    "font_scale": 0.55
   },
   "road_barrier": {
-    "enabled": true,
-    "alpha": 0.08
+    "enabled": false,
+    "alpha": 0.08,
+    "font_scale": 0.55
   },
   "bike_lane": {
     "enabled": true,
-    "alpha": 0.79
+    "alpha": 0.66,
+    "font_scale": 1.5
   },
   "traffic_sign": {
-    "enabled": true,
-    "alpha": 0.13
+    "enabled": false,
+    "alpha": 0.13,
+    "font_scale": 0.55
   }
 }

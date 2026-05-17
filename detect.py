@@ -8,6 +8,8 @@ import csv
 from ultralytics import YOLO
 import json
 
+import detection_settings
+
 try:
     from gps_from_mov import extract_mov_gps_points
 except Exception:
@@ -41,6 +43,8 @@ TRAFFIC_SIGN_MODEL = ROOT / "models" / "traffic_sign.pt"
 
 SETTINGS_FILE = ROOT / "detection_settings.json"
 
+# Load per-model settings saved by detection_settings.py.
+# Returns an empty dict if the file does not exist or is corrupt.
 def load_user_settings() -> dict:
     if not SETTINGS_FILE.exists():
         return {}
@@ -428,29 +432,29 @@ def should_keep_detection(label, conf, class_conf=None):
     threshold = class_conf.get(label, 0.25)
     return conf >= threshold
 
-
-def put_label(frame, text, x, y, color):
-    """
-    Draw readable label text with black outline.
-    """
+# Draw readable label text with black outline.
+# font_scale controls the OpenCV text size (default 0.55).
+def put_label(frame, text, x, y, color, font_scale=0.55):
     y = max(20, y)
 
+    # Outline pass
     cv2.putText(
         frame,
         text,
         (x, y),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
+        font_scale,
         (0, 0, 0),
         4,
     )
 
+    # Coloured pass
     cv2.putText(
         frame,
         text,
         (x, y),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
+        font_scale,
         color,
         2,
     )
@@ -465,6 +469,7 @@ def draw_masks_and_boxes(
     draw_contours=True,
     draw_boxes=True,
     class_conf=None,
+    font_scale=0.55,  
 ):
     """
     Draw YOLO result on frame.
@@ -595,6 +600,7 @@ def draw_masks_and_boxes(
                 x1,
                 y1 - 6,
                 color,
+                font_scale
             )
 
     # =========================
@@ -633,6 +639,7 @@ def draw_masks_and_boxes(
                 x1,
                 y1 - 6,
                 color,
+                font_scale
             )
 
     output = overlay
@@ -681,6 +688,12 @@ def get_output_path(file_path):
 # Model loading
 # =========================
 
+#   Load all available models, applying any user settings from
+#   detection_settings.json (enabled flag, alpha, font_scale).
+#   Missing models are skipped.
+#   Disabled models are skipped.
+#   At least one model must be enabled and present.
+
 def load_models():
     user_settings = load_user_settings()
     loaded_models = []
@@ -695,18 +708,26 @@ def load_models():
             print(f"{model_name} model disabled by user settings, skipped.")
             continue
 
-        # ── Apply user alpha override ─────────────────────────────────
-        # Work on a shallow copy so MODEL_CONFIGS is never mutated.
+        # ── Apply user overrides (shallow copy keeps MODEL_CONFIGS clean)
         effective_config = dict(config)
+
         if "alpha" in model_setting:
             effective_config["alpha"] = float(model_setting["alpha"])
+
+        # font_scale defaults to 0.55 if not yet in the settings file
+        effective_config["font_scale"] = float(
+            model_setting.get("font_scale", 0.55)
+        )
 
         if not model_path.exists():
             print(f"{model_name} model not found, skipped: {model_path}")
             continue
 
-        print(f"Using {model_name} model: {model_path}")
-        print(f"  alpha={effective_config['alpha']:.2f}")
+        print(
+            f"Using {model_name} model: {model_path}  "
+            f"alpha={effective_config['alpha']:.2f}  "
+            f"font_scale={effective_config['font_scale']:.2f}"
+        )
 
         model = YOLO(str(model_path))
         print(f"{model_name} model classes: {model.names}")
@@ -720,8 +741,8 @@ def load_models():
         expected = "\\n".join(str(c["path"]) for c in MODEL_CONFIGS)
         raise FileNotFoundError(
             "No detection models found or all are disabled.\\n"
-            "Please place at least one model in models folder or re-enable models:\\n"
-            + expected
+            "Please place at least one model in models folder or re-enable "
+            "models in Detection Settings:\\n" + expected
         )
 
     return loaded_models
@@ -758,6 +779,7 @@ def process_frame(frame, loaded_models):
             draw_contours=True,
             draw_boxes=True,
             class_conf=config["class_conf"],
+            font_scale=config.get("font_scale", 0.55),
         )
 
         total_counts = merge_counts(total_counts, counts)
