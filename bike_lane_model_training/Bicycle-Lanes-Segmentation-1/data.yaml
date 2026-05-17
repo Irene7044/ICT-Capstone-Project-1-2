@@ -1,0 +1,14 @@
+names:
+- Bike_Lane
+- Bike_Sign
+- Green_Bike_Lane
+nc: 3
+roboflow:
+  license: CC BY 4.0
+  project: bicycle-lanes-segmentation
+  url: https://universe.roboflow.com/tathithaominh-gmail-com/bicycle-lanes-segmentation/dataset/1
+  version: 1
+  workspace: tathithaominh-gmail-com
+test: ../test/images
+train: ../train/images
+val: ../valid/images
