@@ -1,7 +1,26 @@
+@'
 .venv/
-runs/
-datasets/
-*.pt
-*.onnx
 __pycache__/
 *.pyc
+
+runs/
+uploads/
+results/
+reports/
+repo_backup/
+archive/
+
+data/sydneyscapes/
+data/yolo_sydneyscapes/
+data/*.zip
+data/*.MOV
+data/*.mov
+data/*.insv
+data/*.mp4
+data/*.avi
+
+testing resource/*.mp4
+testing resource/*.avi
+testing resource/*.mov
+!testing resource/.gitkeep
+'@ | Set-Content .\.gitignore
