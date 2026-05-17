@@ -316,22 +316,16 @@ def save_detection_details_csv(report_stem, rows):
         "processed_file",
         "object_id",
         "class_name",
-        "track_id",
-        "first_frame_index",
-        "first_frame_time_sec",
-        "gps_time",
+        "last_frame_time_sec",
         "camera_lat",
         "camera_lon",
         "camera_ele",
         "camera_speed",
-        "camera_track",
+        "camera_angle",
         "confidence",
-        "x1",
-        "y1",
-        "x2",
-        "y2",
         "side_of_frame",
     ]
+    
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -926,11 +920,10 @@ def process_video(
     # label -> set of unique integer track IDs seen so far
     seen_ids = {}
 
-    # (display_label, track_id) -> snapshot frame captured on first detection
-    first_seen_frames = {}
-
-    # One row per unique object
-    detail_rows = []
+    # Stores the LATEST frame data for each unique detected object.
+    # Overwritten on every frame so the final entry holds the last
+    # position and GPS reading for that object.
+    last_seen_data = {}
 
     frame_count = 0
     last_result_frame = None
@@ -1018,36 +1011,32 @@ def process_video(
                     if display_label not in seen_ids:
                         seen_ids[display_label] = set()
 
-                    is_new = track_id not in seen_ids[display_label]
+                    # Register this ID as seen whether new or not.
                     seen_ids[display_label].add(track_id)
 
-                    if is_new:
-                        obj_key = (display_label, track_id)
-                        first_seen_frames[obj_key] = frame.copy()
+                    x1, y1, x2, y2 = map(int, boxes.xyxy[i].tolist())
 
-                        x1, y1, x2, y2 = map(int, boxes.xyxy[i].tolist())
-
-                        detail_rows.append({
+                    # Always overwrite with the current frame's data.
+                    # On first detection this creates the entry.
+                    # On every subsequent detection this updates it with
+                    # fresher GPS so the final entry holds the last frame.
+                    last_seen_data[(display_label, track_id)] = {
+                        "snapshot": frame.copy(),
+                        "row": {
                             "source_file": source_file_path.name,
                             "processed_file": file_path.name,
                             "object_id": f"{display_label}_{track_id}",
                             "class_name": display_label,
-                            "track_id": track_id,
-                            "first_frame_index": frame_count,
-                            "first_frame_time_sec": round(frame_time_sec, 3),
-                            "gps_time": gps_point["time"].isoformat() if gps_point else "",
+                            "last_frame_time_sec": round(frame_time_sec, 3),
                             "camera_lat": gps_point["latitude"] if gps_point else "",
                             "camera_lon": gps_point["longitude"] if gps_point else "",
                             "camera_ele": gps_point["elevation"] if gps_point else "",
                             "camera_speed": gps_point["speed"] if gps_point else "",
-                            "camera_track": gps_point["track"] if gps_point else "",
+                            "camera_angle": gps_point["track"] if gps_point else "",
                             "confidence": round(conf, 4),
-                            "x1": x1,
-                            "y1": y1,
-                            "x2": x2,
-                            "y2": y2,
                             "side_of_frame": frame_side(x1, x2, VIDEO_SIZE[0]),
-                        })
+                        }
+                    }
 
             last_result_frame = result_frame
 
@@ -1063,9 +1052,12 @@ def process_video(
     snapshot_dir = REPORT_DIR / output_stem / "snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    for (label, tid), snap_frame in first_seen_frames.items():
-        snap_path = snapshot_dir / f"{label}_id{tid}.jpg"
-        cv2.imwrite(str(snap_path), snap_frame)
+    # Build CSV rows and save snapshots from each object's last frame.
+    detail_rows = []
+    for (label, tid), data in last_seen_data.items():
+        snap_path = snapshot_dir / f"{label}_id{tid}_last.jpg"
+        cv2.imwrite(str(snap_path), data["snapshot"])
+        detail_rows.append(data["row"])
 
     total_counts = {
         label: len(ids)
