@@ -1192,7 +1192,21 @@ def process_all_uploads():
             success = process_image(file_path, loaded_models)
 
         elif suffix in VIDEO_EXTS:
-            success = process_video(file_path, loaded_models)
+
+            gps_points = []
+            process_video_path = file_path
+
+            if suffix == ".mov":
+                gps_points = try_extract_gps_from_mov(file_path)
+                process_video_path = try_convert_mov_for_processing(file_path)
+
+            success = process_video(
+                file_path=process_video_path,
+                loaded_models=loaded_models,
+                gps_points=gps_points,
+                source_file_path=file_path,
+                output_stem=file_path.stem
+            )
 
         if success:
             move_to_processed(file_path)

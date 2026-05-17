@@ -8,7 +8,7 @@ from detect import load_models, process_video
 ROOT = Path(__file__).resolve().parent
 
 # Original full MOV, only used for GPS extraction
-FULL_MOV_PATH = Path("/mnt/d/Uni Adelaide/ICT/Videos/FILE230923-154715-002004F.MOV")
+FULL_MOV_PATH = Path("/mnt/c/Users/Irene/Downloads/FILE230923-151719-001998F.MOV")
 
 # Short MP4, used for fast detection test
 SHORT_MP4_PATH = ROOT / "uploads" / "test_30sec.mp4"
