@@ -1,0 +1,34 @@
+{
+  "footpath": {
+    "enabled": true,
+    "alpha": 0.1
+  },
+  "road_evidence": {
+    "enabled": true,
+    "alpha": 0.09
+  },
+  "trunk": {
+    "enabled": true,
+    "alpha": 0.08
+  },
+  "pole": {
+    "enabled": true,
+    "alpha": 0.13
+  },
+  "traffic_light": {
+    "enabled": true,
+    "alpha": 0.1
+  },
+  "road_barrier": {
+    "enabled": true,
+    "alpha": 0.08
+  },
+  "bike_lane": {
+    "enabled": true,
+    "alpha": 0.79
+  },
+  "traffic_sign": {
+    "enabled": true,
+    "alpha": 0.13
+  }
+}

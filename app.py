@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import platform
+from detection_settings import show_detection_settings
 
 # =========================
 # Basic paths
@@ -1037,6 +1038,10 @@ video_btn = QPushButton("🎥 Video")
 video_btn.setFixedSize(130, 40)
 video_btn.clicked.connect(upload_video)
 
+settings_btn = QPushButton("⚙ Detection Settings")
+settings_btn.setFixedSize(160, 40)
+settings_btn.clicked.connect(lambda: show_detection_settings(parent=window))
+
 guide_btn = QPushButton("📖 User Guide")
 guide_btn.setFixedSize(130, 40)
 guide_btn.clicked.connect(show_user_guide)
@@ -1074,7 +1079,8 @@ for btn in [
     view_upload_btn,
     view_result_btn,
     clear_upload_btn,
-    clear_result_btn
+    clear_result_btn,
+    settings_btn
 ]:
     btn.setStyleSheet(button_style)
 
@@ -1086,6 +1092,7 @@ for btn in [
 row1 = QHBoxLayout()
 row1.addWidget(img_btn)
 row1.addWidget(video_btn)
+row1.addWidget(settings_btn)
 row1.addWidget(report_btn)
 row1.addWidget(guide_btn)
 row1.setAlignment(Qt.AlignCenter)

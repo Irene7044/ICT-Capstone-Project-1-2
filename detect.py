@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import csv
 from ultralytics import YOLO
+import json
 
 try:
     from gps_from_mov import extract_mov_gps_points
@@ -16,7 +17,6 @@ try:
     from video_convert import convert_mov_to_mp4
 except Exception:
     convert_mov_to_mp4 = None
-
 
 # =========================
 # Basic paths
@@ -39,6 +39,17 @@ ROAD_BARRIER_MODEL = ROOT / "models" / "road_barriers.pt"
 BIKE_LANE_MODEL = ROOT / "models" / "bike_lane.pt"
 TRAFFIC_SIGN_MODEL = ROOT / "models" / "traffic_sign.pt"
 
+SETTINGS_FILE = ROOT / "detection_settings.json"
+
+def load_user_settings() -> dict:
+    if not SETTINGS_FILE.exists():
+        return {}
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
 
 # =========================
 # Base confidence settings
@@ -59,7 +70,7 @@ POLE_CONF = 0.25
 TRAFFIC_LIGHT_CONF = 0.35
 
 ROAD_BARRIER_CONF = 0.25
-BIKE_LANE_CONF = 0.25
+BIKE_LANE_CONF = 0.1
 
 # Traffic sign model has many classes.
 # Keep base confidence low, then apply TRAFFIC_SIGN_CLASS_CONF below.
@@ -671,35 +682,45 @@ def get_output_path(file_path):
 # =========================
 
 def load_models():
-    """
-    Load all available models.
-
-    Missing models are skipped.
-    At least one model must exist.
-    """
+    user_settings = load_user_settings()
     loaded_models = []
 
     for config in MODEL_CONFIGS:
+        model_name = config["name"]
         model_path = config["path"]
 
-        if not model_path.exists():
-            print(f"{config['name']} model not found, skipped: {model_path}")
+        # ── Respect enabled/disabled toggle ───────────────────────────
+        model_setting = user_settings.get(model_name, {})
+        if not model_setting.get("enabled", True):
+            print(f"{model_name} model disabled by user settings, skipped.")
             continue
 
-        print(f"Using {config['name']} model: {model_path}")
+        # ── Apply user alpha override ─────────────────────────────────
+        # Work on a shallow copy so MODEL_CONFIGS is never mutated.
+        effective_config = dict(config)
+        if "alpha" in model_setting:
+            effective_config["alpha"] = float(model_setting["alpha"])
+
+        if not model_path.exists():
+            print(f"{model_name} model not found, skipped: {model_path}")
+            continue
+
+        print(f"Using {model_name} model: {model_path}")
+        print(f"  alpha={effective_config['alpha']:.2f}")
 
         model = YOLO(str(model_path))
-        print(f"{config['name']} model classes: {model.names}")
+        print(f"{model_name} model classes: {model.names}")
 
         loaded_models.append({
-            "config": config,
+            "config": effective_config,
             "model": model,
         })
 
     if not loaded_models:
-        expected = "\n".join(str(config["path"]) for config in MODEL_CONFIGS)
+        expected = "\\n".join(str(c["path"]) for c in MODEL_CONFIGS)
         raise FileNotFoundError(
-            "No detection models found. Please place at least one model in models folder:\n"
+            "No detection models found or all are disabled.\\n"
+            "Please place at least one model in models folder or re-enable models:\\n"
             + expected
         )
 
