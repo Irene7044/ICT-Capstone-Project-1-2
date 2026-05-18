@@ -20,6 +20,11 @@ try:
 except Exception:
     convert_mov_to_mp4 = None
 
+try:
+    from gps_from_gpx import extract_gpx_points
+except Exception:
+    extract_gpx_points = None
+
 # =========================
 # Basic paths
 # =========================
@@ -127,7 +132,7 @@ VIDEO_SIZE = (640, 360)
 SKIP_FRAMES = 2
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv"}
+VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".insv"}
 
 
 # =========================
@@ -874,6 +879,56 @@ def try_extract_gps_from_mov(file_path):
         print(f"GPS extraction failed. Continuing without GPS. Reason: {e}")
         return []
 
+def try_extract_gps_from_gpx(gpx_path):
+    """
+    Try to extract GPS points from a GPX file.
+
+    This is mainly used for Insta360 exports:
+    MP4/INSV video + matching GPX file.
+    """
+    if not gpx_path:
+        return []
+
+    if extract_gpx_points is None:
+        print("GPX extraction module not available. Skipping GPX.")
+        return []
+
+    try:
+        gps_points = extract_gpx_points(gpx_path)
+        print(f"Loaded {len(gps_points)} GPS points from GPX.")
+        return gps_points
+    except Exception as e:
+        print(f"GPX extraction failed. Continuing without GPS. Reason: {e}")
+        return []
+
+
+def try_convert_insv_for_processing(file_path):
+    """
+    Convert INSV into clean MP4 for OpenCV.
+
+    Some INSV files may work directly, but OpenCV is more reliable with MP4.
+    This uses the same FFmpeg conversion function as MOV.
+    """
+    if convert_mov_to_mp4 is None:
+        print("Video converter module not available. Trying original INSV.")
+        return file_path
+
+    try:
+        CONVERTED_DIR.mkdir(parents=True, exist_ok=True)
+
+        clean_path = CONVERTED_DIR / f"{file_path.stem}_clean.mp4"
+
+        convert_mov_to_mp4(
+            str(file_path),
+            str(clean_path)
+        )
+
+        print(f"INSV converted for processing: {clean_path}")
+        return clean_path
+
+    except Exception as e:
+        print(f"INSV conversion failed. Trying original INSV. Reason: {e}")
+        return file_path
 
 def try_convert_mov_for_processing(file_path):
     """
@@ -1144,15 +1199,23 @@ def move_to_processed(file_path):
 # Public detection function
 # =========================
 
-def run_detection(input_path, move_original=False):
+def run_detection(input_path, gpx_path=None, move_original=False):
     """
     Process one image or video.
 
-    For MOV:
-    - extract GPS from the original MOV
+    MOV:
+    - extract GPS from MOV automatically
     - convert MOV to clean MP4
-    - run detection on the clean MP4
-    - save outputs using the original MOV filename stem
+    - run detection with GPS
+
+    MP4:
+    - if GPX is provided, use GPX GPS
+    - otherwise run detection without GPS
+
+    INSV:
+    - if GPX is provided, use GPX GPS
+    - convert INSV to clean MP4
+    - run detection with GPS if available
     """
     input_path = Path(input_path)
 
@@ -1179,8 +1242,18 @@ def run_detection(input_path, move_original=False):
         output_stem = input_path.stem
 
         if suffix == ".mov":
+            # MOV can use its own embedded GPS.
             gps_points = try_extract_gps_from_mov(input_path)
             process_video_path = try_convert_mov_for_processing(input_path)
+
+        elif suffix == ".insv":
+            # INSV uses matching GPX file for the safe workflow.
+            gps_points = try_extract_gps_from_gpx(gpx_path)
+            process_video_path = try_convert_insv_for_processing(input_path)
+
+        else:
+            # MP4/MKV/AVI can optionally use GPX.
+            gps_points = try_extract_gps_from_gpx(gpx_path)
 
         success = process_video(
             file_path=process_video_path,
@@ -1256,11 +1329,23 @@ def main():
     Usage:
         python detect.py
         python detect.py uploads/test.mp4
-        python detect.py "E:/path/to/image.jpg"
+        python detect.py uploads/test.mp4 uploads/test.gpx
+        python detect.py uploads/test.insv uploads/test.gpx
+        python detect.py uploads/test.mov
     """
     if len(sys.argv) >= 2:
         input_path = sys.argv[1]
-        run_detection(input_path, move_original=False)
+
+        gpx_path = None
+        if len(sys.argv) >= 3:
+            gpx_path = sys.argv[2]
+
+        run_detection(
+            input_path=input_path,
+            gpx_path=gpx_path,
+            move_original=False
+        )
+
     else:
         process_all_uploads()
 

@@ -40,15 +40,15 @@ class DetectionThread(QThread):
     finished = Signal(str)
     error = Signal(str)
 
-    def __init__(self, input_path):
+    def __init__(self, input_path, gpx_path=None):
         super().__init__()
         self.input_path = input_path
+        self.gpx_path = gpx_path
 
     def run(self):
         """
         Run detect.py in a background thread.
 
-        Important:
         app.py does not run YOLO directly.
         All detection is done inside detect.py.
         """
@@ -59,18 +59,23 @@ class DetectionThread(QThread):
                 self.error.emit(f"detect.py not found:\n{detect_path}")
                 return
 
+            cmd = [sys.executable, detect_path, self.input_path]
+
+            if self.gpx_path:
+                cmd.append(self.gpx_path)
+
             result = subprocess.run(
-                [sys.executable, detect_path, self.input_path],
+                cmd,
                 cwd=BASE_DIR,
                 check=True,
-                capture_output=True,
+                capture_output=False,
                 text=True
             )
 
             message = "Detection completed. Results saved in results folder."
 
-            #if result.stdout:
-            #    message += "\n\n" + result.stdout[-1500:]
+            if result.stdout:
+                message += "\n\n" + result.stdout[-1500:]
 
             self.finished.emit(message)
 
@@ -89,14 +94,14 @@ class DetectionThread(QThread):
             self.error.emit(str(e))
 
 
-def run_detection(input_path):
+def run_detection(input_path, gpx_path=None):
     global thread
 
     processing_label.setText("Processing...")
     progress_bar.setValue(30)
     QApplication.processEvents()
 
-    thread = DetectionThread(input_path)
+    thread = DetectionThread(input_path, gpx_path)
     thread.finished.connect(detection_finished)
     thread.error.connect(detection_failed)
     thread.start()
@@ -190,7 +195,10 @@ def upload_video():
     dialog = QFileDialog(window)
     dialog.setWindowTitle("Select Video")
     dialog.setFileMode(QFileDialog.ExistingFile)
-    dialog.setNameFilter("Videos (*.mp4 *.avi *.mov *.MOV *.mkv *.MKV);;All Files (*)")
+
+    dialog.setNameFilter(
+        "Videos (*.mp4 *.MP4 *.avi *.AVI *.mov *.MOV *.mkv *.MKV *.insv *.INSV);;All Files (*)"
+    )
 
     start_dir = os.path.expanduser("~")
     dialog.setDirectory(start_dir)
@@ -200,22 +208,69 @@ def upload_video():
     if dialog.exec():
         file_path = dialog.selectedFiles()[0]
 
+        suffix = os.path.splitext(file_path)[1].lower()
+
+        gpx_path = None
+
+        if suffix in [".mp4", ".avi", ".mkv", ".insv"]:
+            gpx_path = ask_for_gpx_file(window, file_path)
+
         dest_path, status = copy_to_uploads(file_path)
+
+        copied_gpx_path = None
+        if gpx_path:
+            copied_gpx_path, _ = copy_to_uploads(gpx_path)
 
         if status == "copied":
             QMessageBox.information(window, "Uploaded", f"Video uploaded to:\n{dest_path}")
         else:
             QMessageBox.information(window, "Uploaded", "Video already in uploads folder.")
 
-        run_detection(dest_path)
+        run_detection(dest_path, copied_gpx_path)
 
+def ask_for_gpx_file(parent, video_path):
+    """
+    Ask user whether they have a matching GPX file.
+
+    Used mainly for Insta360 MP4/INSV exports.
+    """
+    suffix = os.path.splitext(video_path)[1].lower()
+
+    if suffix == ".mov":
+        # MOV already has automatic GPS extraction.
+        return None
+
+    reply = QMessageBox.question(
+        parent,
+        "GPX File",
+        "Do you have a matching GPX file for this video?\n\n"
+        "Choose Yes for Insta360 exported MP4/INSV if you want latitude and longitude in the CSV.\n"
+        "Choose No to run detection without GPS.",
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.Yes if suffix == ".insv" else QMessageBox.No
+    )
+
+    if reply == QMessageBox.No:
+        return None
+
+    gpx_path, _ = QFileDialog.getOpenFileName(
+        parent,
+        "Select Matching GPX File",
+        os.path.dirname(video_path),
+        "GPX Files (*.gpx *.GPX);;All Files (*)"
+    )
+
+    if not gpx_path:
+        return None
+
+    return gpx_path
 
 # =========================
 # Preview settings
 # =========================
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
-VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv")
+VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".insv")
 TEXT_EXTENSIONS = (".txt", ".csv", ".json", ".log")
 
 
