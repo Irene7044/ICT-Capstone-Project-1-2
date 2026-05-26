@@ -35,7 +35,7 @@ jobs:
         run: >
           python -m gdown --folder
           "https://drive.google.com/drive/folders/${{ env.GDRIVE_FOLDER_ID }}"
-          -O models --remaining-ok
+          -O models
 
       - name: Verify models downloaded
         run: dir models
