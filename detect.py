@@ -29,11 +29,19 @@ except Exception:
 # Basic paths
 # =========================
 
-ROOT = Path(__file__).resolve().parent
+# Read-only bundle assets (models, etc.) — use sys._MEIPASS when frozen.
+if getattr(sys, 'frozen', False):
+    ROOT = Path(sys._MEIPASS)
+else:
+    ROOT = Path(__file__).resolve().parent
 
-INPUT_DIR = ROOT / "uploads"
-OUTPUT_DIR = ROOT / "results"
-REPORT_DIR = ROOT / "reports"
+# Writable user data lives outside the bundle so it survives updates.
+_DATA_DIR = Path.home() / "Documents" / "RoadSight"
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+INPUT_DIR = _DATA_DIR / "uploads"
+OUTPUT_DIR = _DATA_DIR / "results"
+REPORT_DIR = _DATA_DIR / "reports"
 PROCESSED_DIR = INPUT_DIR / "processed"
 CONVERTED_DIR = INPUT_DIR / "converted"
 
@@ -46,7 +54,7 @@ ROAD_BARRIER_MODEL = ROOT / "models" / "road_barriers.pt"
 BIKE_LANE_MODEL = ROOT / "models" / "bike_lane.pt"
 TRAFFIC_SIGN_MODEL = ROOT / "models" / "traffic_sign.pt"
 
-SETTINGS_FILE = ROOT / "detection_settings.json"
+SETTINGS_FILE = _DATA_DIR / "detection_settings.json"
 
 # Load per-model settings saved by detection_settings.py.
 # Returns an empty dict if the file does not exist or is corrupt.

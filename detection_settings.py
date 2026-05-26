@@ -42,8 +42,14 @@ from PySide6.QtWidgets import (
 # Paths
 # ---------------------------------------------------------------------------
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SETTINGS_FILE = os.path.join(BASE_DIR, "detection_settings.json")
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "RoadSight")
+os.makedirs(_DATA_DIR, exist_ok=True)
+SETTINGS_FILE = os.path.join(_DATA_DIR, "detection_settings.json")
 
 # ---------------------------------------------------------------------------
 # Model metadata

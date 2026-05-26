@@ -11,7 +11,6 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 import sys
 import os
 import shutil
-import subprocess
 import platform
 from detection_settings import show_detection_settings
 
@@ -19,12 +18,20 @@ from detection_settings import show_detection_settings
 # Basic paths
 # =========================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# When frozen by PyInstaller, sys._MEIPASS is the read-only bundle directory.
+# All read-only assets (images, models) live there.
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-RESULT_FOLDER = os.path.join(BASE_DIR, "results")
-REPORT_FOLDER = os.path.join(BASE_DIR, "reports")
-INPUT_FOLDER = os.path.join(BASE_DIR, "testing resource")
+# Writable user data lives outside the bundle so it survives updates.
+DATA_DIR = os.path.join(os.path.expanduser("~"), "Documents", "RoadSight")
+
+UPLOAD_FOLDER = os.path.join(DATA_DIR, "uploads")
+RESULT_FOLDER = os.path.join(DATA_DIR, "results")
+REPORT_FOLDER = os.path.join(DATA_DIR, "reports")
+INPUT_FOLDER = os.path.join(DATA_DIR, "testing resource")
 
 os.makedirs(INPUT_FOLDER, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -46,50 +53,14 @@ class DetectionThread(QThread):
         self.gpx_path = gpx_path
 
     def run(self):
-        """
-        Run detect.py in a background thread.
-
-        app.py does not run YOLO directly.
-        All detection is done inside detect.py.
-        """
         try:
-            detect_path = os.path.join(BASE_DIR, "detect.py")
-
-            if not os.path.exists(detect_path):
-                self.error.emit(f"detect.py not found:\n{detect_path}")
-                return
-
-            cmd = [sys.executable, detect_path, self.input_path]
-
-            if self.gpx_path:
-                cmd.append(self.gpx_path)
-
-            result = subprocess.run(
-                cmd,
-                cwd=BASE_DIR,
-                check=True,
-                capture_output=False,
-                text=True
+            import detect as _detect
+            _detect.run_detection(
+                input_path=self.input_path,
+                gpx_path=self.gpx_path,
+                move_original=False,
             )
-
-            message = "Detection completed. Results saved in results folder."
-
-            if result.stdout:
-                message += "\n\n" + result.stdout[-1500:]
-
-            self.finished.emit(message)
-
-        except subprocess.CalledProcessError as e:
-            error_text = "Detection script failed."
-
-            if e.stdout:
-                error_text += "\n\nOutput:\n" + e.stdout[-3000:]
-
-            if e.stderr:
-                error_text += "\n\nError:\n" + e.stderr[-4000:]
-
-            self.error.emit(error_text)
-
+            self.finished.emit("Detection completed. Results saved in results folder.")
         except Exception as e:
             self.error.emit(str(e))
 

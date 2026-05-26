@@ -9,3 +9,8 @@ results/
 scripts/
 uploads/
 reports/
+build/
+dist/
+zip_files/
+*.zip
+.DS_Store
