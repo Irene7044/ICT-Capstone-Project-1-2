@@ -8,7 +8,7 @@ env:
   # The folder must be shared as "Anyone with the link can view".
   # Example URL: https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz
   #                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  GDRIVE_FOLDER_ID: "PASTE_YOUR_FOLDER_ID_HERE"
+  GDRIVE_FOLDER_ID: "1-lcSwatTLdOQJoNbvRk4Tkrq_hB2jwxl?usp=sharing"
 
 jobs:
   build-windows:
