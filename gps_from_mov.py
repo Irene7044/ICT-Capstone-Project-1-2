@@ -3,6 +3,13 @@ from datetime import datetime, timezone
 import re
 import subprocess
 
+def get_exiftool_path():
+    # When running as a PyInstaller exe
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+        return str(base / 'exiftool.exe')
+    # When running normally in VS Code/terminal
+    return 'exiftool'
 
 def infer_fallback_date(video_path):
     """
@@ -108,7 +115,7 @@ def extract_mov_gps_points(video_path):
     fallback_date_str = infer_fallback_date(video_path)
 
     cmd = [
-        "exiftool",
+        get_exiftool_path(),
         "-api", "LargeFileSupport=1",
         "-ee",
         "-u",

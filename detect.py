@@ -1063,7 +1063,8 @@ def process_video(
                     source=frame,
                     conf=config["conf"],
                     persist=True,
-                    tracker="bytetrack.yaml", # Ultralystics library feature -> keep same ID for same object across frames
+                    # Ultralystics library feature -> keep same ID for same object across frames
+                    tracker="bytetrack.yaml", 
                     save=False,
                     verbose=False,
                 )
