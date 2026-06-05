@@ -5,12 +5,11 @@ import subprocess
 import sys
 
 def get_exiftool_path():
-    # When running as a PyInstaller exe
     if getattr(sys, 'frozen', False):
         base = Path(sys._MEIPASS)
         return str(base / 'exiftool.exe')
-    # When running normally in VS Code/terminal
-    return 'exiftool'
+    # For VS Code testing - use project root
+    return str(Path(__file__).parent / 'exiftool.exe')
 
 def infer_fallback_date(video_path):
     """

@@ -16,6 +16,7 @@ datas = [
     ('userguide',                  'userguide'),
     ('detection_settings.json',    '.'),   # default settings seed
     ('exiftool.exe',            '.'),
+    ('exiftool_files',          'exiftool_files'),
 ]
 
 # ultralytics ships YAML configs, default weights metadata, etc.
