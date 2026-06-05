@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import re
 import subprocess
+import sys
 
 def get_exiftool_path():
     # When running as a PyInstaller exe
