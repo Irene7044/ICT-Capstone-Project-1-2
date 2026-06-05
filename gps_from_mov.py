@@ -6,10 +6,11 @@ import sys
 
 def get_exiftool_path():
     if getattr(sys, 'frozen', False):
+        # Running as bundled exe on Windows
         base = Path(sys._MEIPASS)
         return str(base / 'exiftool.exe')
-    # For VS Code testing - use project root
-    return str(Path(__file__).parent / 'exiftool.exe')
+    # Running in development (Linux/Mac) - use system exiftool
+    return 'exiftool'
 
 def infer_fallback_date(video_path):
     """
@@ -111,11 +112,11 @@ def extract_mov_gps_points(video_path):
         }
     ]
     """
-    video_path = Path(video_path)
+    video_path = Path(video_path).resolve()
     fallback_date_str = infer_fallback_date(video_path)
-
+    exiftool_path = get_exiftool_path()
     cmd = [
-        get_exiftool_path(),
+        exiftool_path,
         "-api", "LargeFileSupport=1",
         "-ee",
         "-u",
@@ -126,12 +127,18 @@ def extract_mov_gps_points(video_path):
     ]
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        
+        run_kwargs = {
+            'capture_output': True,
+            'text': True,
+        }
+        
+        # Only set cwd when running as bundled Windows exe
+        if getattr(sys, 'frozen', False):
+            run_kwargs['cwd'] = str(Path(exiftool_path).parent)
+        
+        result = subprocess.run(cmd, **run_kwargs)
+        
     except FileNotFoundError:
         raise RuntimeError("ExifTool was not found. Please install ExifTool and make sure it is in PATH.")
 
