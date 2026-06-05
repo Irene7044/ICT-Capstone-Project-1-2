@@ -40,6 +40,10 @@ hiddenimports = [
     # Common ultralytics / torch transitive imports
     'pkg_resources.py2_warn',
     'PIL._tkinter_finder',
+
+    'matplotlib',
+    'matplotlib.pyplot',
+    'matplotlib.backends.backend_agg',
 ] + ul_hidden + ff_hidden
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
@@ -54,7 +58,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'tkinter',
-        'matplotlib',
         'IPython',
         'jupyter',
         'notebook',
